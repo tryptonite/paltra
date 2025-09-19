@@ -1,20 +1,16 @@
-# Base44 App
+# Paltra Operations App
 
-
-This app was created automatically by Base44.
-It's a Vite+React app that communicates with the Base44 API.
+This Vite + React application now runs entirely on a local data store rather than the Base44 platform. All previously remote entities are backed by browser storage so you can explore the UI without an external account.
 
 ## Running the app
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm run dev
 ```
 
 ## Building the app
 
 ```bash
-npm run build
+pnpm run build
 ```
-
-For more information and support, please contact Base44 support at app@base44.com.

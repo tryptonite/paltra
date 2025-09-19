@@ -2,7 +2,7 @@
 import { useState, useEffect, createContext, useContext } from "react";
 
 const TOAST_LIMIT = 20;
-const TOAST_REMOVE_DELAY = 1000000;
+const DEFAULT_TOAST_DURATION = 5000; // 5 seconds default
 
 const actionTypes = {
   ADD_TOAST: "ADD_TOAST",
@@ -20,7 +20,7 @@ function genId() {
 
 const toastTimeouts = new Map();
 
-const addToRemoveQueue = (toastId) => {
+const addToRemoveQueue = (toastId, duration = DEFAULT_TOAST_DURATION) => {
   if (toastTimeouts.has(toastId)) {
     return;
   }
@@ -31,7 +31,7 @@ const addToRemoveQueue = (toastId) => {
       type: actionTypes.REMOVE_TOAST,
       toastId,
     });
-  }, TOAST_REMOVE_DELAY);
+  }, duration);
 
   toastTimeouts.set(toastId, timeout);
 };
@@ -110,7 +110,7 @@ function dispatch(action) {
   });
 }
 
-function toast({ ...props }) {
+function toast({ duration = DEFAULT_TOAST_DURATION, ...props }) {
   const id = genId();
 
   const update = (props) =>
@@ -133,6 +133,11 @@ function toast({ ...props }) {
       },
     },
   });
+
+  // Auto-dismiss after the specified duration
+  if (duration > 0) {
+    addToRemoveQueue(id, duration);
+  }
 
   return {
     id,

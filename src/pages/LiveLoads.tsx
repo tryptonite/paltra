@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { LiveLoad } from '@/api/entities';
-import { User } from '@/api/entities';
+import { LiveLoads } from '@/lib/database';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -36,7 +36,7 @@ const formatInEST = (dateString, options = {}) => {
 };
 
 export default function LiveLoadsPage() {
-  const [user, setUser] = useState(null);
+  const { user, profile } = useAuth();
   const [carrier, setCarrier] = useState('');
   const [psCount, setPsCount] = useState('');
   const [avdCount, setAvdCount] = useState('');
@@ -74,11 +74,11 @@ export default function LiveLoadsPage() {
   const fetchTodaysData = async () => {
     setIsLoading(true);
     try {
-      const allLoads = await LiveLoad.list('-created_date', 100); 
+      const allLoads = await LiveLoads.list('created_time desc'); 
       const businessDayStart = getBusinessDayStart();
       
       const todaysEntries = allLoads.filter(load => 
-        isAfter(new Date(load.created_date), businessDayStart)
+        isAfter(new Date(load.created_time), businessDayStart)
       );
       
       setTodaysLoads(todaysEntries);
@@ -90,18 +90,10 @@ export default function LiveLoadsPage() {
   };
 
   useEffect(() => {
-    const fetchUserAndData = async () => {
-      try {
-        const currentUser = await User.me();
-        setUser(currentUser);
-        await fetchTodaysData();
-      } catch (e) {
-        console.error("Failed to fetch user or data", e);
-        setIsLoading(false);
-      }
-    };
-    fetchUserAndData();
-  }, []);
+    if (user) {
+      fetchTodaysData();
+    }
+  }, [user]);
 
   const generateCarrierSummary = (loads) => {
     const summary = {};
@@ -116,8 +108,8 @@ export default function LiveLoadsPage() {
           cartons_total: 0,
           total_pallets: 0,
           total_cartons: 0,
-          last_submitted_at: load.created_date, // Initialize with current load's time
-          last_submitted_by: load.created_by   // Initialize with current load's user
+          last_submitted_at: load.created_time, // Initialize with current load's time
+          last_submitted_by: load.user_name   // Initialize with current load's user
         };
       }
       summary[load.carrier].ps_total += load.ps_count || 0;
@@ -129,9 +121,9 @@ export default function LiveLoadsPage() {
       summary[load.carrier].total_cartons += load.total_cartons || 0;
       
       // Keep track of the most recent submission for this carrier
-      if (new Date(load.created_date) > new Date(summary[load.carrier].last_submitted_at)) {
-        summary[load.carrier].last_submitted_at = load.created_date;
-        summary[load.carrier].last_submitted_by = load.created_by;
+      if (new Date(load.created_time) > new Date(summary[load.carrier].last_submitted_at)) {
+        summary[load.carrier].last_submitted_at = load.created_time;
+        summary[load.carrier].last_submitted_by = load.user_name;
       }
     });
     setCarrierSummary(Object.values(summary));
@@ -164,10 +156,9 @@ export default function LiveLoadsPage() {
     setShowConfirm(false);
 
     try {
-      const newRecord = await LiveLoad.create({
+      const newRecord = await LiveLoads.create({
         ...confirmData,
-        user_role: user.role,
-        user_department: user.department,
+        user_name: profile?.full_name || user?.email || 'Unknown User',
       });
       
       setCarrier('');
@@ -189,7 +180,7 @@ export default function LiveLoadsPage() {
               <ToastAction
                   altText="Undo"
                   onClick={async () => {
-                      await LiveLoad.delete(newRecord.id);
+                      await LiveLoads.delete(newRecord.id);
                       await fetchTodaysData();
                       toast({ description: 'Entry successfully removed.' });
                   }}
@@ -384,8 +375,8 @@ export default function LiveLoadsPage() {
               {todaysLoads.length === 0 && !isLoading && <TableRow><TableCell colSpan="7" className="text-center py-8 text-gray-500">No entries today</TableCell></TableRow>}
               {currentItems.map((load) => (
                   <TableRow key={load.id}>
-                    <TableCell className="font-mono text-sm">{formatInEST(load.created_date, { dateStyle: 'short', timeStyle: 'medium' })}</TableCell>
-                    <TableCell className="text-sm text-gray-600">{load.created_by.split('@')[0]}</TableCell>
+                    <TableCell className="font-mono text-sm">{formatInEST(load.created_time, { dateStyle: 'short', timeStyle: 'medium' })}</TableCell>
+                    <TableCell className="text-sm text-gray-600">{load.user_name}</TableCell>
                     <TableCell className="font-medium">{load.carrier}</TableCell>
                     <TableCell className="text-center">{load.ps_count || 0}</TableCell>
                     <TableCell className="text-center">{load.avd_count || 0}</TableCell>

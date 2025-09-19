@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { User } from '@/api/entities';
+import { useAuth } from '@/contexts/AuthContext';
+import { Profiles as ProfilesService } from '@/lib/database';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -10,9 +11,23 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { UserCheck, UserX, Clock, CheckCircle2, Mail, Building, Users, Settings } from 'lucide-react';
 import moment from 'moment';
 import { useToast } from "@/components/ui/use-toast";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL!,
+  import.meta.env.VITE_SUPABASE_ANON_KEY!
+);
 
 const DEPARTMENTS = ['P&S', 'AVD', '95', 'General'];
 const ROLES = ['user', 'admin'];
+
+type Row = {
+  id: string;
+  full_name: string | null;
+  role: string;
+  is_approved: boolean; // Note: using is_approved instead of approved to match profiles table
+  created_at: string; // from profiles
+};
 
 const formatInEST = (dateString) => {
     const date = moment.utc(dateString).utcOffset(-4);
@@ -20,7 +35,7 @@ const formatInEST = (dateString) => {
 };
 
 export default function UserApprovalPage() {
-  const [currentUser, setCurrentUser] = useState(null);
+  const { profile } = useAuth();
   const [pendingUsers, setPendingUsers] = useState([]);
   const [approvedUsers, setApprovedUsers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -30,34 +45,67 @@ export default function UserApprovalPage() {
   const [editingUser, setEditingUser] = useState(null);
   const { toast } = useToast();
 
+  // Simple list state for AdminUsers functionality
+  const [rows, setRows] = useState([]);
+  const [err, setErr] = useState(null);
+
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
       try {
-        const user = await User.me();
-        setCurrentUser(user);
-        
-        if (user.role !== 'admin') {
+        // Check if current user is admin
+        if (profile?.role !== 'admin') {
           setIsLoading(false);
           return;
         }
 
-        const allUsers = await User.list('-created_date');
+        const allUsers = await ProfilesService.list('created_at desc');
         
         // Filter for pending users (is_approved is false, null, or undefined)
-        const pending = allUsers.filter(u => !u.is_approved && u.id !== user.id);
+        const pending = allUsers.filter(u => !u.is_approved && u.id !== profile.id);
         setPendingUsers(pending);
         
         // Filter for approved users (is_approved is explicitly true)
-        const approved = allUsers.filter(u => u.is_approved === true && u.id !== user.id);
+        const approved = allUsers.filter(u => u.is_approved === true && u.id !== profile.id);
         setApprovedUsers(approved.slice(0, 20)); // Show last 20 approved users
         
       } catch (e) {
         console.error("Failed to load users", e);
+        console.error("Error details:", e);
+        
+        // Check if it's a table not found error
+        if (e?.code === '42P01') {
+          toast({
+            title: "Database Setup Required",
+            description: "The profiles table doesn't exist. Please run the SQL schema in Supabase first.",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Error",
+            description: `Failed to load users: ${e?.message || 'Unknown error'}`,
+            variant: "destructive",
+          });
+        }
       }
       setIsLoading(false);
     };
-    loadData();
+    
+    if (profile) {
+      loadData();
+    }
+  }, [profile]);
+
+  // Simple list useEffect for AdminUsers functionality
+  useEffect(() => {
+    (async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, full_name, role, is_approved, created_at")
+        .order("created_at", { ascending: false });
+      if (error) setErr(error.message);
+      else setRows(data ?? []);
+    })();
   }, []);
 
   const handleAction = (user, action) => {
@@ -81,14 +129,9 @@ export default function UserApprovalPage() {
 
     try {
       if (actionType === 'approve') {
-        // Include all required fields when updating the user
-        await User.update(selectedUser.id, { 
+        await ProfilesService.update(selectedUser.id, { 
           is_approved: true,
           role: selectedUser.role || 'user',
-          email: selectedUser.email,
-          full_name: selectedUser.full_name || '',
-          department: selectedUser.department || 'General',
-          company: selectedUser.company || 'Legrand-FM'
         });
         toast({
           title: 'User Approved',
@@ -97,7 +140,7 @@ export default function UserApprovalPage() {
       } else if (actionType === 'reject') {
         // For rejection, we could either delete the user or set a rejection flag
         // For now, we'll just remove them from the system
-        await User.delete(selectedUser.id);
+        await ProfilesService.delete(selectedUser.id);
         toast({
           title: 'User Rejected',
           description: `${selectedUser.full_name || selectedUser.email} has been removed from the system.`,
@@ -105,13 +148,8 @@ export default function UserApprovalPage() {
         });
       } else if (actionType === 'revoke') {
         // Revoke access by setting is_approved to false
-        await User.update(selectedUser.id, {
+        await ProfilesService.update(selectedUser.id, {
           is_approved: false,
-          department: selectedUser.department,
-          role: selectedUser.role,
-          email: selectedUser.email,
-          full_name: selectedUser.full_name || '',
-          company: selectedUser.company || 'Legrand-FM'
         });
         toast({
           title: 'Access Revoked',
@@ -120,10 +158,9 @@ export default function UserApprovalPage() {
         });
       } else if (actionType === 'update' && editingUser) {
         // Update user department and role
-        await User.update(selectedUser.id, {
+        await ProfilesService.update(selectedUser.id, {
           department: editingUser.department,
           role: editingUser.role,
-          email: selectedUser.email,
           full_name: selectedUser.full_name || '',
           company: selectedUser.company || 'Legrand-FM',
           is_approved: selectedUser.is_approved
@@ -135,10 +172,10 @@ export default function UserApprovalPage() {
       }
       
       // Reload data
-      const allUsers = await User.list('-created_date');
-      const pending = allUsers.filter(u => !u.is_approved && u.id !== currentUser.id);
+      const allUsers = await ProfilesService.list('created_at desc');
+      const pending = allUsers.filter(u => !u.is_approved && u.id !== profile.id);
       setPendingUsers(pending);
-      const approved = allUsers.filter(u => u.is_approved === true && u.id !== currentUser.id);
+      const approved = allUsers.filter(u => u.is_approved === true && u.id !== profile.id);
       setApprovedUsers(approved.slice(0, 20));
       
     } catch (error) {
@@ -156,7 +193,7 @@ export default function UserApprovalPage() {
     setIsLoading(false);
   };
 
-  if (currentUser?.role !== 'admin') {
+  if (profile?.role !== 'admin') {
     return (
       <div className="flex flex-col items-center justify-center h-64">
         <UserX className="w-16 h-16 text-slate-400 mb-4" />
@@ -480,6 +517,32 @@ export default function UserApprovalPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Simple AdminUsers List */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="w-5 h-5" />
+            All Users (Simple List)
+          </CardTitle>
+          <CardDescription>
+            Direct view of all users from the profiles table
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {err ? (
+            <p style={{color:'red'}}>Error: {err}</p>
+          ) : (
+            <ul className="space-y-2">
+              {rows.map(r => (
+                <li key={r.id} className="p-2 border rounded">
+                  {r.full_name ?? "(no name)"} — {r.role} — {r.is_approved ? 'Approved' : 'Pending'} — {new Date(r.created_at).toLocaleString()}
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -2,5 +2,6 @@
 
 
 export function createPageUrl(pageName: string) {
-    return '/' + pageName.toLowerCase().replace(/ /g, '-');
+    // Keep original casing for explicit routes like "/LiveLoads", "/Call-Ins" etc.
+    return '/' + pageName;
 }

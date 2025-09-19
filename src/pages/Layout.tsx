@@ -6,6 +6,7 @@ import { Package, Truck, Phone, Plane, User as UserIcon, Menu, LogOut, ArrowRigh
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { User } from '@/api/entities';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,7 +41,9 @@ const NavSkeleton = () => (
 
 const PaltraLogo = () => (
   <div className="flex items-center gap-3">
-    <img src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/8f316973d_Paltra-logo-tp.png" alt="Paltra Logo" className="w-10 h-10 object-contain" />
+    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-teal-500 grid place-items-center text-white font-bold">
+      P
+    </div>
     <div className="flex flex-col">
       <span className="text-2xl font-bold text-white tracking-tight">Paltra</span>
       <span className="text-xs text-blue-200 -mt-1 font-medium">Your warehouse. Streamlined.</span>
@@ -75,61 +78,32 @@ const NavLink = ({ item, pathname, isMobile = false }) => {
 
 export default function Layout({ children, currentPageName }) {
   const location = useLocation();
-  const [user, setUser] = React.useState(null);
-  const [isPendingApproval, setIsPendingApproval] = React.useState(false);
-  const [isUserLoaded, setIsUserLoaded] = React.useState(false);
-  const [lastUserFetch, setLastUserFetch] = React.useState(0);
+  const { signOut, profile, user } = useAuth(); // Get user from AuthContext instead of local state
 
-  React.useEffect(() => {
-    const fetchUser = async () => {
-      const now = Date.now();
-      // Only fetch user data once every 30 seconds to reduce API calls
-      if (now - lastUserFetch < 30000 && user) {
-        return;
+  const handleSignOut = async () => {
+    try {
+      const { error } = await signOut();
+      if (error) {
+        console.error('Error signing out:', error);
       }
-
-      try {
-        // Add small delay to prevent rapid requests
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        const currentUser = await User.me();
-        setUser(currentUser);
-        setIsUserLoaded(true);
-        setLastUserFetch(now);
-        
-        if (currentUser && !currentUser.is_approved) {
-          setIsPendingApproval(true);
-        } else {
-          setIsPendingApproval(false);
-        }
-      } catch (e) {
-        setUser(null);
-        setIsUserLoaded(true);
-        setIsPendingApproval(false);
-        setLastUserFetch(now);
-      }
-    };
-    fetchUser();
-  }, [lastUserFetch, user]);
-
-  const handleLogout = async () => {
-    await User.logout();
-    window.location.reload();
-  }
-
-  const getUserInitials = (user) => {
-    if (user?.full_name) {
-      return user.full_name.split(' ').map(name => name[0]).join('').toUpperCase().slice(0, 2);
+    } catch (error) {
+      console.error('Error signing out:', error);
     }
-    return user?.email?.[0]?.toUpperCase() || 'U';
+  };
+
+
+  const getUserInitials = (profile) => {
+    if (profile?.full_name) {
+      return profile.full_name.split(' ').map(name => name[0]).join('').toUpperCase().slice(0, 2);
+    }
+    return profile?.email?.[0]?.toUpperCase() || 'U';
   };
   
   const visibleNavItems = React.useMemo(() => {
-    if (!isUserLoaded) return [];
-    return navigationItems.filter(item => !item.adminOnly || user?.role === 'admin');
-  }, [isUserLoaded, user]);
+    return navigationItems.filter(item => !item.adminOnly || profile?.role === 'admin');
+  }, [profile]);
 
-  if (isPendingApproval) {
+  if (profile && profile.is_approved === false) {
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4">
         <div className="max-w-md w-full bg-white rounded-2xl shadow-lg p-8 text-center">
@@ -145,13 +119,13 @@ export default function Layout({ children, currentPageName }) {
           <div className="space-y-4">
             <div className="p-4 bg-slate-50 rounded-lg">
               <p className="text-sm text-slate-600">
-                <strong>Account:</strong> {user?.email}
+                <strong>Account:</strong> {profile?.email}
               </p>
               <p className="text-sm text-slate-600">
-                <strong>Department:</strong> {user?.department}
+                <strong>Department:</strong> {profile?.department}
               </p>
             </div>
-            <Button onClick={handleLogout} variant="outline" className="w-full">
+            <Button onClick={handleSignOut} variant="outline" className="w-full">
               <LogOut className="mr-2 h-4 w-4" />
               Log Out
             </Button>
@@ -173,13 +147,9 @@ export default function Layout({ children, currentPageName }) {
           </div>
           <div className="flex-1 overflow-y-auto px-4 py-6">
             <nav className="space-y-2">
-              {isUserLoaded ? (
-                visibleNavItems.map((item) => (
-                  <NavLink key={item.title} item={item} pathname={location.pathname} />
-                ))
-              ) : (
-                <NavSkeleton />
-              )}
+              {visibleNavItems.map((item) => (
+                <NavLink key={item.title} item={item} pathname={location.pathname} />
+              ))}
             </nav>
           </div>
           <div className="p-4 border-t border-slate-700">
@@ -208,13 +178,9 @@ export default function Layout({ children, currentPageName }) {
                   </Link>
                 </div>
                 <nav className="flex-1 space-y-2 p-4 overflow-y-auto">
-                  {isUserLoaded ? (
-                    visibleNavItems.map((item) => (
-                      <NavLink key={item.title} item={item} pathname={location.pathname} isMobile={true} />
-                    ))
-                  ) : (
-                    <NavSkeleton />
-                  )}
+                  {visibleNavItems.map((item) => (
+                    <NavLink key={item.title} item={item} pathname={location.pathname} isMobile={true} />
+                  ))}
                 </nav>
                 <div className="p-4 border-t border-slate-700">
                   <div className="text-xs text-slate-400 text-center font-medium">
@@ -231,7 +197,7 @@ export default function Layout({ children, currentPageName }) {
               <h1 className="text-xl font-bold text-slate-900 tracking-tight truncate">{currentPageName}</h1>
               <div className="h-8 w-px bg-slate-300 flex-shrink-0"></div>
               <span className="text-sm text-slate-600 font-medium bg-slate-100 px-3 py-1 rounded-full truncate">
-                {user?.company ? `${user.company} Portal` : 'Paltra Warehouse Portal'}
+                {profile?.company ? `${profile.company} Portal` : 'Paltra Warehouse Portal'}
               </span>
             </div>
           </div>
@@ -241,7 +207,7 @@ export default function Layout({ children, currentPageName }) {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-teal-500 hover:from-blue-600 hover:to-teal-600 shadow-lg hover:shadow-xl transition-all duration-200 border-2 border-white">
                   <div className="w-full h-full rounded-full flex items-center justify-center text-white font-bold text-sm">
-                    {getUserInitials(user)}
+                    {getUserInitials(profile)}
                   </div>
                 </Button>
               </DropdownMenuTrigger>
@@ -250,20 +216,20 @@ export default function Layout({ children, currentPageName }) {
                   <div className="flex flex-col space-y-3">
                     <div className="flex items-center gap-3">
                       <div className="h-12 w-12 rounded-full bg-gradient-to-br from-blue-500 to-teal-500 flex items-center justify-center shadow-md flex-shrink-0">
-                        <span className="text-white font-bold text-sm">{getUserInitials(user)}</span>
+                        <span className="text-white font-bold text-sm">{getUserInitials(profile)}</span>
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-slate-900 truncate">{user?.full_name || 'User'}</p>
-                        <p className="text-xs text-slate-500 truncate">{user?.email}</p>
+                        <p className="text-sm font-semibold text-slate-900 truncate">{profile?.full_name || 'User'}</p>
+                        <p className="text-xs text-slate-500 truncate">{profile?.email}</p>
                         <div className="flex items-center flex-wrap gap-2 mt-1.5">
-                          {user?.company && (
+                          {profile?.company && (
                             <span className="text-xs text-emerald-600 font-medium bg-emerald-50 px-2 py-0.5 rounded-full">
-                              {user.company}
+                              {profile.company}
                             </span>
                           )}
-                          {user?.department && (
+                          {profile?.department && (
                             <span className="text-xs text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded-full">
-                              {user.department}
+                              {profile.department}
                             </span>
                           )}
                         </div>
@@ -272,7 +238,7 @@ export default function Layout({ children, currentPageName }) {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogout} className="text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg mx-2 mb-2 transition-colors">
+                <DropdownMenuItem onClick={handleSignOut} className="text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg mx-2 mb-2 transition-colors">
                   <LogOut className="mr-3 h-4 w-4" />
                   Sign Out
                 </DropdownMenuItem>

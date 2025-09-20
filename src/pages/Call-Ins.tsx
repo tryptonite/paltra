@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { CallIn } from '@/api/entities';
-import { User } from '@/api/entities';
+import { CallIns } from '@/lib/database';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -17,7 +18,7 @@ import { format } from 'date-fns';
 import { useToast } from "@/components/ui/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 
-const CARRIERS = ['ABF', 'AVR', 'FEF', 'OLD', 'R&L', 'SAIA', 'SEF', 'WARD', 'XPO'];
+const CARRIERS = ['AAA', 'ABF', 'AVR', 'CEN', 'ESTES', 'FEF', 'OLD', 'R&L', 'SAIA', 'SEF', 'T-FORCE', 'WARD', 'XPO'];
 
 const generateTimeOptions = () => {
   const times = [];
@@ -34,7 +35,12 @@ const generateTimeOptions = () => {
   return times;
 };
 
-const formatInEST = (dateString, options = {}) => {
+interface FormatOptions {
+  dateStyle?: 'short';
+  timeStyle?: 'short';
+}
+
+const formatInEST = (dateString: string, options: FormatOptions = {}) => {
     // moment-timezone is not available. Using fixed offset for EDT (UTC-4).
     const date = moment.utc(dateString).utcOffset(-4);
     
@@ -58,7 +64,6 @@ const isSameDay = (d1, d2) => {
 
 export default function CallInsPage() {
   const [records, setRecords] = useState([]);
-  const [user, setUser] = useState(null);
   const [dockDoor, setDockDoor] = useState('');
   const [carrier, setCarrier] = useState('');
   const [trailerNumber, setTrailerNumber] = useState('');
@@ -68,30 +73,31 @@ export default function CallInsPage() {
   const [confirmData, setConfirmData] = useState(null);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [carrierFilter, setCarrierFilter] = useState('all');
+  const { user, profile } = useAuth();
   const { toast } = useToast();
 
   const timeOptions = generateTimeOptions();
 
   useEffect(() => {
-    const loadData = async () => {
-      setIsLoading(true);
-      try {
-        const currentUser = await User.me();
-        setUser(currentUser);
-        // Fetch a larger batch of records for client-side filtering
-        const data = await CallIn.list('-created_date', 500); 
-        setRecords(data);
-      } catch(e) {
-        console.error("Failed to load data", e);
-      }
-      setIsLoading(false);
-    };
+  const loadData = async () => {
+    if (!user) return;
+    
+    setIsLoading(true);
+    try {
+      // Fetch records with profile information ordered by submitted_at descending
+      const data = await CallIns.listCallInsWithProfiles('submitted_at desc');
+      setRecords(data);
+    } catch(e) {
+      console.error("Failed to load data", e);
+    }
+    setIsLoading(false);
+  };
     loadData();
-  }, []);
+  }, [user]);
 
   const fetchRecords = async () => {
-    // Fetch a larger batch of records for client-side filtering
-    const data = await CallIn.list('-created_date', 500);
+    // Fetch records with profile information ordered by submitted_at descending
+    const data = await CallIns.listCallInsWithProfiles('submitted_at desc');
     setRecords(data);
   };
 
@@ -127,7 +133,7 @@ export default function CallInsPage() {
       dock_door: dockDoor, 
       carrier, 
       trailer_number: trailerNumber, 
-      ready_time: readyDateTime.toISOString(),
+      ready_time: readyDateTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
       display_ready_time: readyDateTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) 
     };
     setConfirmData(data);
@@ -139,43 +145,93 @@ export default function CallInsPage() {
       setIsLoading(true);
       setShowConfirm(false);
 
-      const { display_ready_time, ...submissionData } = confirmData; 
-      
-      const newRecord = await CallIn.create({
-        ...submissionData,
-        user_role: user.role, 
-        user_department: user.department
-      });
-      setDockDoor(''); 
-      setCarrier(''); 
-      setTrailerNumber(''); 
-      setReadyTime('');
-      setConfirmData(null);
-      await fetchRecords();
+      try {
+        // Get current user for authentication
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('Please sign in');
 
-      toast({
-          title: 'Entry Saved',
-          description: 'Your call-in entry has been submitted.',
-          duration: 10000,
-          action: (
-              <ToastAction
-                  altText="Undo"
-                  onClick={async () => {
-                      await CallIn.delete(newRecord.id);
-                      await fetchRecords();
-                      toast({ description: 'Entry successfully removed.' });
-                  }}
-              >
-                  Undo
-              </ToastAction>
-          ),
-      });
+        // Validation guards to prevent 400 errors
+        if (!CARRIERS.includes(confirmData.carrier)) {
+          setIsLoading(false);
+          return alert('Invalid carrier');
+        }
+        
+        if (!/^\d{1,2}:\d{2}(:\d{2})?$/.test(confirmData.ready_time)) {
+          setIsLoading(false);
+          return alert('Ready time must be HH:MM');
+        }
+        
+        if (confirmData.dock_door && !Number.isFinite(Number(confirmData.dock_door))) {
+          setIsLoading(false);
+          return alert('Dock must be a number');
+        }
+
+        // Format ready time to include seconds if needed
+        const formattedReadyTime = confirmData.ready_time.match(/^\d{1,2}:\d{2}$/) 
+          ? `${confirmData.ready_time}:00` 
+          : confirmData.ready_time;
+
+        const payload = {
+          submitted_by: user.id,
+          carrier: confirmData.carrier,
+          ready_time: formattedReadyTime,
+          trailer_no: confirmData.trailer_number,
+          dock: confirmData.dock_door ? Number(confirmData.dock_door) : 0,
+        };
+
+        console.log('Submitting payload:', payload);
+
+        const { data, error } = await supabase
+          .from('callins')
+          .insert(payload)
+          .select()
+          .single();
+
+        if (error) {
+          console.error('Insert failed', error);
+          throw error;
+        }
+
+        console.log('Insert successful:', data);
+        
+        setDockDoor(''); 
+        setCarrier(''); 
+        setTrailerNumber(''); 
+        setReadyTime('');
+        setConfirmData(null);
+        await fetchRecords();
+
+        toast({
+            title: 'Entry Saved',
+            description: 'Your call-in entry has been submitted.',
+            duration: 5000,
+            action: (
+                <ToastAction
+                    altText="Undo"
+                    onClick={async () => {
+                        await supabase.from('callins').delete().eq('id', data.id);
+                        await fetchRecords();
+                        toast({ description: 'Entry successfully removed.' });
+                    }}
+                >
+                    Undo
+                </ToastAction>
+            ),
+        });
+      } catch (error) {
+        console.error('Failed to submit call-in:', error);
+        toast({
+          title: 'Error',
+          description: `Failed to submit call-in: ${error.message}`,
+          variant: 'destructive',
+        });
+      }
 
       setIsLoading(false);
   };
   
   const filteredRecords = records
-    .filter(record => isSameDay(record.created_date, selectedDate))
+    .filter(record => isSameDay(record.submitted_at, selectedDate))
     .filter(record => carrierFilter === 'all' || record.carrier === carrierFilter);
 
   return (
@@ -193,7 +249,21 @@ export default function CallInsPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <Label htmlFor="dockDoor" className="text-slate-700 font-medium">Dock Door (Optional)</Label>
-              <Input id="dockDoor" value={dockDoor} onChange={(e) => setDockDoor(e.target.value)} className="mt-2 rounded-lg border-slate-300 focus:border-blue-500 focus:ring-blue-500 w-full" />
+              <Input 
+                id="dockDoor" 
+                type="number"
+                min="1"
+                max="99"
+                value={dockDoor} 
+                onChange={(e) => {
+                  const value = e.target.value;
+                  // Only allow up to 2 digits
+                  if (value === '' || (value.length <= 2 && /^\d+$/.test(value))) {
+                    setDockDoor(value);
+                  }
+                }} 
+                className="mt-2 rounded-lg border-slate-300 focus:border-blue-500 focus:ring-blue-500 w-full" 
+              />
             </div>
             <div>
               <Label htmlFor="carrier" className="text-slate-700 font-medium">Carrier *</Label>
@@ -292,12 +362,12 @@ export default function CallInsPage() {
               {!isLoading && filteredRecords.length === 0 && <TableRow><TableCell colSpan="6" className="text-center py-8 text-slate-500">No call-ins found for this date.</TableCell></TableRow>}
               {filteredRecords.map(record => (
                 <TableRow key={record.id} className="hover:bg-slate-50 transition-colors border-slate-100">
-                  <TableCell className="text-sm text-slate-600">{formatInEST(record.created_date, { dateStyle: 'short', timeStyle: 'short' })}</TableCell>
-                  <TableCell className="text-sm text-slate-700">{record.created_by.split('@')[0]}</TableCell>
+                  <TableCell className="text-sm text-slate-600">{formatInEST(record.submitted_at, { dateStyle: 'short', timeStyle: 'short' })}</TableCell>
+                  <TableCell className="text-sm text-slate-700">{(record.profile as any)?.full_name || 'N/A'}</TableCell>
                   <TableCell className="font-medium text-slate-800">{record.carrier}</TableCell>
-                  <TableCell className="text-sm text-slate-600 font-medium">{formatInEST(record.ready_time, { timeStyle: 'short' })}</TableCell>
-                  <TableCell className="text-slate-700">{record.trailer_number}</TableCell>
-                  <TableCell className="text-slate-700">{record.dock_door || 'N/A'}</TableCell>
+                  <TableCell className="text-sm text-slate-600 font-medium">{record.ready_time.substring(0, 5)}</TableCell>
+                  <TableCell className="text-slate-700">{record.trailer_no}</TableCell>
+                  <TableCell className="text-slate-700">{record.dock || 'N/A'}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

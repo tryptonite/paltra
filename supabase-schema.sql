@@ -45,15 +45,14 @@ CREATE TABLE IF NOT EXISTS liveloads (
 );
 
 -- Create call-ins table
-CREATE TABLE IF NOT EXISTS call_ins (
+CREATE TABLE IF NOT EXISTS callins (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  dock_door TEXT NOT NULL,
+  submitted_by UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
   carrier TEXT NOT NULL,
-  trailer_number TEXT NOT NULL,
   ready_time TEXT NOT NULL,
-  user_role TEXT NOT NULL,
-  user_department TEXT NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  trailer_no TEXT NOT NULL,
+  dock INTEGER NOT NULL DEFAULT 0,
+  submitted_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -108,7 +107,7 @@ CREATE INDEX IF NOT EXISTS idx_profiles_is_approved ON profiles(is_approved);
 CREATE INDEX IF NOT EXISTS idx_btx_entries_control_number ON btx_entries(control_number);
 CREATE INDEX IF NOT EXISTS idx_btx_entries_created_at ON btx_entries(created_at);
 CREATE INDEX IF NOT EXISTS idx_liveloads_created_time ON liveloads(created_time);
-CREATE INDEX IF NOT EXISTS idx_call_ins_created_at ON call_ins(created_at);
+CREATE INDEX IF NOT EXISTS idx_callins_submitted_at ON callins(submitted_at);
 CREATE INDEX IF NOT EXISTS idx_dimensions_control_number ON dimensions(control_number);
 CREATE INDEX IF NOT EXISTS idx_dimensions_created_at ON dimensions(created_at);
 CREATE INDEX IF NOT EXISTS idx_truckloads_created_at ON truckloads(created_at);
@@ -122,7 +121,7 @@ ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER PUBLICATION supabase_realtime ADD TABLE profiles;
 ALTER TABLE btx_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE liveloads ENABLE ROW LEVEL SECURITY;
-ALTER TABLE call_ins ENABLE ROW LEVEL SECURITY;
+ALTER TABLE callins ENABLE ROW LEVEL SECURITY;
 ALTER TABLE dimensions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE truckloads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE dock_doors ENABLE ROW LEVEL SECURITY;
@@ -174,7 +173,7 @@ CREATE POLICY "Users can delete their own btx entries" ON btx_entries
   );
 
 -- Similar policies for other tables (abbreviated for brevity)
--- You can copy the pattern above for live_loads, call_ins, dimensions, truckloads
+-- You can copy the pattern above for live_loads, callins, dimensions, truckloads
 
 -- RLS Policies for liveloads table
 CREATE POLICY "Authenticated users can view liveloads" ON liveloads
@@ -199,25 +198,25 @@ CREATE POLICY "Users can delete their own liveloads" ON liveloads
     )
   );
 
--- RLS Policies for call_ins table
-CREATE POLICY "Authenticated users can view call ins" ON call_ins
+-- RLS Policies for callins table
+CREATE POLICY "Authenticated users can view callins" ON callins
   FOR SELECT USING (auth.role() = 'authenticated');
 
-CREATE POLICY "Authenticated users can insert call ins" ON call_ins
+CREATE POLICY "Authenticated users can insert callins" ON callins
   FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 
-CREATE POLICY "Users can update their own call ins" ON call_ins
+CREATE POLICY "Users can update their own callins" ON callins
   FOR UPDATE USING (
     EXISTS (
-      SELECT 1 FROM users 
+      SELECT 1 FROM profiles 
       WHERE id = auth.uid() AND (role = 'admin' OR id = auth.uid())
     )
   );
 
-CREATE POLICY "Users can delete their own call ins" ON call_ins
+CREATE POLICY "Users can delete their own callins" ON callins
   FOR DELETE USING (
     EXISTS (
-      SELECT 1 FROM users 
+      SELECT 1 FROM profiles 
       WHERE id = auth.uid() AND (role = 'admin' OR id = auth.uid())
     )
   );
@@ -293,7 +292,7 @@ CREATE TRIGGER update_btx_entries_updated_at BEFORE UPDATE ON btx_entries
 
 -- Note: liveloads table doesn't have updated_at column, so no trigger needed
 
-CREATE TRIGGER update_call_ins_updated_at BEFORE UPDATE ON call_ins
+CREATE TRIGGER update_callins_updated_at BEFORE UPDATE ON callins
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_dimensions_updated_at BEFORE UPDATE ON dimensions

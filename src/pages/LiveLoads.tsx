@@ -1,7 +1,7 @@
-
 import React, { useState, useEffect } from 'react';
 import { LiveLoads } from '@/lib/database';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -19,7 +19,15 @@ import { ToastAction } from "@/components/ui/toast";
 
 const CARRIERS = ['AAA', 'ABF', 'AVR', 'CEN', 'ESTES', 'FEF', 'OLD', 'R&L', 'SAIA', 'SEF', 'T-FORCE', 'WARD', 'XPO'];
 
-const formatInEST = (dateString, options = {}) => {
+interface FormatOptions {
+  dateStyle?: 'short';
+  timeStyle?: 'short' | 'medium';
+  month?: 'long';
+  day?: 'numeric';
+  year?: 'numeric';
+}
+
+const formatInEST = (dateString: string, options: FormatOptions = {}) => {
     // moment-timezone is not available. Using fixed offset for EDT (UTC-4).
     const date = moment.utc(dateString).utcOffset(-4);
     
@@ -71,18 +79,60 @@ export default function LiveLoadsPage() {
     return businessDayStart.toDate(); // Return a Date object for isAfter
   };
 
+
   const fetchTodaysData = async () => {
     setIsLoading(true);
     try {
-      const allLoads = await LiveLoads.list('created_time desc'); 
-      const businessDayStart = getBusinessDayStart();
+      console.log('Fetching live loads data with profiles...');
+      const allLoads = await LiveLoads.listWithProfiles(); 
+      console.log('All loads fetched:', allLoads.length, 'entries');
       
-      const todaysEntries = allLoads.filter(load => 
-        isAfter(new Date(load.created_time), businessDayStart)
-      );
+      // Filter entries by business day (since 11:00 PM EST previous day)
+      const businessDayStart = getBusinessDayStart();
+      console.log('Business day starts at:', businessDayStart);
+      
+      const todaysEntries = allLoads.filter(load => {
+        const loadDate = new Date(load.created_time);
+        return loadDate >= businessDayStart;
+      });
+      
+      console.log(`Filtered ${todaysEntries.length} entries from ${allLoads.length} total entries for current business day`);
       
       setTodaysLoads(todaysEntries);
-      generateCarrierSummary(todaysEntries);
+      
+      // Generate carrier summary with user profiles
+      const summary = {};
+      todaysEntries.forEach(load => {
+        if (!summary[load.carrier]) {
+          summary[load.carrier] = {
+            carrier: load.carrier,
+            ps_total: 0,
+            avd_total: 0,
+            raceway_total: 0,
+            fitting_total: 0,
+            cartons_total: 0,
+            total_pallets: 0,
+            total_cartons: 0,
+            last_submitted_at: load.created_time,
+            last_submitted_by: (load.profile as any)?.full_name || load.submitted_by
+          };
+        }
+        summary[load.carrier].ps_total += load.ps_count || 0;
+        summary[load.carrier].avd_total += load.avd_count || 0;
+        summary[load.carrier].raceway_total += load.raceway_pallets || 0;
+        summary[load.carrier].fitting_total += load.fitting_pallets || 0;
+        summary[load.carrier].cartons_total += load.cartons_95 || 0;
+        summary[load.carrier].total_pallets += load.total_pallets || 0;
+        summary[load.carrier].total_cartons += load.total_cartons || 0;
+        
+        // Keep track of the most recent submission for this carrier
+        if (new Date(load.created_time) > new Date(summary[load.carrier].last_submitted_at)) {
+          summary[load.carrier].last_submitted_at = load.created_time;
+          summary[load.carrier].last_submitted_by = (load.profile as any)?.full_name || load.submitted_by;
+        }
+      });
+      console.log('Carrier summary generated:', Object.values(summary));
+      setCarrierSummary(Object.values(summary));
     } catch (error) {
       console.error("Failed to fetch data", error);
     }
@@ -95,40 +145,89 @@ export default function LiveLoadsPage() {
     }
   }, [user]);
 
-  const generateCarrierSummary = (loads) => {
-    const summary = {};
-    loads.forEach(load => {
-      if (!summary[load.carrier]) {
-        summary[load.carrier] = {
-          carrier: load.carrier,
-          ps_total: 0,
-          avd_total: 0,
-          raceway_total: 0,
-          fitting_total: 0,
-          cartons_total: 0,
-          total_pallets: 0,
-          total_cartons: 0,
-          last_submitted_at: load.created_time, // Initialize with current load's time
-          last_submitted_by: load.user_name   // Initialize with current load's user
-        };
-      }
-      summary[load.carrier].ps_total += load.ps_count || 0;
-      summary[load.carrier].avd_total += load.avd_count || 0;
-      summary[load.carrier].raceway_total += load.raceway_pallets || 0;
-      summary[load.carrier].fitting_total += load.fitting_pallets || 0;
-      summary[load.carrier].cartons_total += load.cartons_95 || 0;
-      summary[load.carrier].total_pallets += load.total_pallets || 0;
-      summary[load.carrier].total_cartons += load.total_cartons || 0;
-      
-      // Keep track of the most recent submission for this carrier
-      if (new Date(load.created_time) > new Date(summary[load.carrier].last_submitted_at)) {
-        summary[load.carrier].last_submitted_at = load.created_time;
-        summary[load.carrier].last_submitted_by = load.user_name;
-      }
-    });
-    setCarrierSummary(Object.values(summary));
-  };
 
+
+  const toInt = (v: string) => Math.max(0, Number(v || 0) | 0);
+
+  const handleDeleteEntry = async (entryId: string) => {
+    try {
+      console.log('=== DELETE ENTRY DEBUG ===');
+      console.log('Entry ID to delete:', entryId);
+      console.log('Entry ID type:', typeof entryId);
+      
+      // Check if entryId is valid
+      if (!entryId) {
+        throw new Error('No entry ID provided');
+      }
+      
+      // First, let's verify the entry exists by trying to fetch it
+      console.log('Verifying entry exists...');
+      try {
+        const { data: verifyData, error: verifyError } = await supabase
+          .from('liveloads')
+          .select('id, carrier')
+          .eq('id', entryId)
+          .single();
+        
+        console.log('Verification result:', { verifyData, verifyError });
+        
+        if (verifyError) {
+          throw new Error(`Entry with ID ${entryId} not found in database: ${verifyError.message}`);
+        }
+        
+        console.log('Entry verified, proceeding with delete...');
+      } catch (verifyErr) {
+        console.error('Verification failed:', verifyErr);
+        throw verifyErr;
+      }
+      
+      console.log('Calling LiveLoads.delete...');
+      // Pass the original ID (number) to the delete function
+      console.log('Using original ID (as number):', entryId);
+      const result = await LiveLoads.delete(entryId);
+      console.log('Delete result:', result);
+      
+      // Check if any rows were actually affected
+      if (!result || result.length === 0) {
+        console.log('No rows affected, but refreshing data to sync UI with database...');
+        await fetchTodaysData();
+        toast({ 
+          title: 'Entry Not Found',
+          description: 'The entry may have already been deleted. Data refreshed.',
+          duration: 3000
+        });
+        return; // Exit early instead of throwing error
+      }
+      
+      console.log('Entry deleted successfully from database');
+      
+      console.log('Refreshing data...');
+      await fetchTodaysData();
+      console.log('Data refreshed');
+      
+      toast({ 
+        title: 'Entry Removed',
+        description: 'The live load entry has been successfully removed.',
+        duration: 5000
+      });
+      console.log('=== DELETE COMPLETE ===');
+    } catch (error) {
+      console.error('=== DELETE ERROR ===');
+      console.error('Error removing entry:', error);
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
+      });
+      toast({ 
+        title: 'Error',
+        description: `Failed to remove the entry: ${error.message}`,
+        variant: 'destructive',
+        duration: 5000
+      });
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -136,17 +235,16 @@ export default function LiveLoadsPage() {
       alert("You must be logged in and select a carrier.");
       return;
     }
-    const data = {
+    setConfirmData({
       carrier,
-      ps_count: Number(psCount) || 0,
-      avd_count: Number(avdCount) || 0,
-      raceway_pallets: Number(racewayPallets) || 0,
-      fitting_pallets: Number(fittingPallets) || 0,
-      cartons_95: Number(cartons95) || 0,
-      total_pallets: totalPallets,
-      total_cartons: totalCartons,
-    };
-    setConfirmData(data);
+      ps_count: toInt(psCount),
+      avd_count: toInt(avdCount),
+      raceway_pallets: toInt(racewayPallets),
+      fitting_pallets: toInt(fittingPallets),
+      cartons_95: toInt(cartons95),
+      total_pallets: toInt(psCount) + toInt(avdCount) + toInt(racewayPallets) + toInt(fittingPallets),
+      total_cartons: toInt(cartons95),
+    });
     setShowConfirm(true);
   };
 
@@ -156,10 +254,15 @@ export default function LiveLoadsPage() {
     setShowConfirm(false);
 
     try {
+      console.log('Submitting data:', confirmData);
+      console.log('User ID:', user!.id);
+      
       const newRecord = await LiveLoads.create({
         ...confirmData,
-        user_name: profile?.full_name || user?.email || 'Unknown User',
+        submitted_by: user!.id,          // ← MUST be the UUID
       });
+      
+      console.log('Data submitted successfully:', newRecord);
       
       setCarrier('');
       setPsCount('');
@@ -175,14 +278,66 @@ export default function LiveLoadsPage() {
       toast({
           title: 'Entry Saved',
           description: 'Your live load entry has been submitted.',
-          duration: 10000,
+          duration: 5000,
           action: (
               <ToastAction
                   altText="Undo"
                   onClick={async () => {
-                      await LiveLoads.delete(newRecord.id);
-                      await fetchTodaysData();
-                      toast({ description: 'Entry successfully removed.' });
+                      try {
+                          console.log('=== TOAST UNDO DEBUG ===');
+                          console.log('Undoing entry with ID:', newRecord.id);
+                          console.log('NewRecord object:', newRecord);
+                          
+                          if (!newRecord.id) {
+                              throw new Error('No entry ID in newRecord');
+                          }
+                          
+                          console.log('Calling LiveLoads.delete...');
+                          // Pass the original ID (number) to the delete function
+                          console.log('Using original ID (as number):', newRecord.id);
+                          const result = await LiveLoads.delete(newRecord.id);
+                          console.log('Delete result:', result);
+                          
+                          // Check if any rows were actually affected
+                          if (!result || result.length === 0) {
+                              console.log('No rows affected, but refreshing data to sync UI with database...');
+                              await fetchTodaysData();
+                              toast({ 
+                                  title: 'Entry Not Found',
+                                  description: 'The entry may have already been deleted. Data refreshed.',
+                                  duration: 3000
+                              });
+                              return; // Exit early instead of throwing error
+                          }
+                          
+                          console.log('Entry deleted successfully from database');
+                          
+                          console.log('Refreshing data...');
+                          await fetchTodaysData();
+                          console.log('Data refreshed');
+                          
+                          toast({ 
+                              title: 'Entry Removed',
+                              description: 'The live load entry has been successfully removed.',
+                              duration: 5000
+                          });
+                          console.log('=== TOAST UNDO COMPLETE ===');
+                      } catch (error) {
+                          console.error('=== TOAST UNDO ERROR ===');
+                          console.error('Error removing entry:', error);
+                          console.error('Error details:', {
+                              message: error.message,
+                              code: error.code,
+                              details: error.details,
+                              hint: error.hint
+                          });
+                          toast({ 
+                              title: 'Error',
+                              description: `Failed to remove the entry: ${error.message}`,
+                              variant: 'destructive',
+                              duration: 5000
+                          });
+                      }
                   }}
               >
                   Undo
@@ -310,7 +465,7 @@ export default function LiveLoadsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><Clock className="h-5 w-5" /> Today's Summary by Carrier</CardTitle>
           <CardDescription>
-            Click a row to calculate space. Totals for {formatInEST(new Date(), { month: 'long', day: 'numeric', year: 'numeric' })}. Resets daily at 11:00 PM EST.
+            Click a row to calculate space. Totals for {formatInEST(new Date().toISOString(), { month: 'long', day: 'numeric', year: 'numeric' })}. Resets daily at 11:00 PM EST.
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
@@ -376,7 +531,7 @@ export default function LiveLoadsPage() {
               {currentItems.map((load) => (
                   <TableRow key={load.id}>
                     <TableCell className="font-mono text-sm">{formatInEST(load.created_time, { dateStyle: 'short', timeStyle: 'medium' })}</TableCell>
-                    <TableCell className="text-sm text-gray-600">{load.user_name}</TableCell>
+                    <TableCell className="text-sm text-gray-600">{(load.profile as any)?.full_name || load.submitted_by}</TableCell>
                     <TableCell className="font-medium">{load.carrier}</TableCell>
                     <TableCell className="text-center">{load.ps_count || 0}</TableCell>
                     <TableCell className="text-center">{load.avd_count || 0}</TableCell>

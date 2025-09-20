@@ -107,7 +107,7 @@ export interface Database {
           cartons_95: number
           total_pallets: number
           total_cartons: number
-          user_name: string
+          submitted_by: string
           created_time: string
         }
         Insert: {
@@ -120,7 +120,7 @@ export interface Database {
           cartons_95: number
           total_pallets: number
           total_cartons: number
-          user_name: string
+          submitted_by: string
           created_time?: string
         }
         Update: {
@@ -133,42 +133,39 @@ export interface Database {
           cartons_95?: number
           total_pallets?: number
           total_cartons?: number
-          user_name?: string
+          submitted_by?: string
           created_time?: string
         }
       }
-      call_ins: {
+      callins: {
         Row: {
           id: string
-          dock_door: string
+          submitted_by: string
           carrier: string
-          trailer_number: string
           ready_time: string
-          user_role: string
-          user_department: string
-          created_at: string
+          trailer_no: string
+          dock: number
+          submitted_at: string
           updated_at: string
         }
         Insert: {
           id?: string
-          dock_door: string
+          submitted_by: string
           carrier: string
-          trailer_number: string
           ready_time: string
-          user_role: string
-          user_department: string
-          created_at?: string
+          trailer_no: string
+          dock: number
+          submitted_at?: string
           updated_at?: string
         }
         Update: {
           id?: string
-          dock_door?: string
+          submitted_by?: string
           carrier?: string
-          trailer_number?: string
           ready_time?: string
-          user_role?: string
-          user_department?: string
-          created_at?: string
+          trailer_no?: string
+          dock?: number
+          submitted_at?: string
           updated_at?: string
         }
       }

@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { LineCount } from '@/api/entities';
 import { User } from '@/api/entities';
+import { getLineCounts } from '@/api/vLineCounts';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -25,7 +26,7 @@ const getAverageData = (records) => {
     const dateGroups = {};
 
     records.forEach(record => {
-        const recordDate = record.date;
+        const recordDate = record.count_date || record.date;
         if (!dateGroups[recordDate]) {
             dateGroups[recordDate] = [];
         }
@@ -66,7 +67,7 @@ export default function LineCountsPage() {
         setIsLoading(true);
         try {
             // Fetch more records to ensure if one is deleted, there are still recent ones visible
-            const data = await LineCount.list('-created_date', 30);
+            const data = await getLineCounts(30);
             setRecords(data);
         } catch (e) {
             console.error("Failed to load records", e);
@@ -301,14 +302,14 @@ export default function LineCountsPage() {
                                 {!isLoading && records.length === 0 && <TableRow><TableCell colSpan="8" className="text-center py-8">No records found.</TableCell></TableRow>}
                                 {records.map(record => (
                                     <TableRow key={record.id}>
-                                        <TableCell>{format(new Date(record.date + 'T00:00:00'), 'PPP')}</TableCell>
+                                        <TableCell>{format(new Date((record.count_date || record.date) + 'T00:00:00'), 'PPP')}</TableCell>
                                         <TableCell>{record.time_period}</TableCell>
                                         <TableCell>{record.preferreds}</TableCell>
                                         <TableCell>{record.parcels}</TableCell>
                                         <TableCell>{record.ltl}</TableCell>
                                         <TableCell className="font-bold">{record.total}</TableCell>
-                                        <TableCell>{record.created_by.split('@')[0]}</TableCell>
-                                        <TableCell>{formatInEST(record.created_date)}</TableCell>
+                                        <TableCell>{record.user_display || record.created_by?.split('@')[0] || 'Unknown User'}</TableCell>
+                                        <TableCell>{formatInEST(record.submitted_at || record.created_date)}</TableCell>
                                     </TableRow>
                                 ))}
                             </TableBody>

@@ -702,6 +702,10 @@ export default function TruckloadsPage() {
                             <span className="font-medium text-slate-600">Weight:</span>
                             <span className="text-slate-800">{selectedPickedUpRecord.weight} lbs</span>
                         </div>
+                        <div className="flex justify-between items-center">
+                            <span className="font-medium text-slate-600">Submitted by:</span>
+                            <span className="text-slate-800">{selectedPickedUpRecord.created_by || 'Unknown User'}</span>
+                        </div>
                     </div>
                 )}
                 <DialogFooter>

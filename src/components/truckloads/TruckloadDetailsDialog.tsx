@@ -38,6 +38,7 @@ export default function TruckloadDetailsDialog({ record, open, onOpenChange, onE
             <div className="flex justify-between items-center"><span className="font-medium text-slate-600">Company Name:</span><span className="text-slate-800">{record.company_name}</span></div>
             <div className="flex justify-between items-center"><span className="font-medium text-slate-600">Total Pieces:</span><span className="text-slate-800">{record.total_pieces}</span></div>
             <div className="flex justify-between items-center"><span className="font-medium text-slate-600">Weight:</span><span className="text-slate-800">{record.weight} lbs</span></div>
+            <div className="flex justify-between items-center"><span className="font-medium text-slate-600">Submitted by:</span><span className="text-slate-800">{record.created_by || 'Unknown User'}</span></div>
         </div>
         <DialogFooter className="sm:justify-between gap-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

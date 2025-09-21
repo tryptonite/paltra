@@ -49,13 +49,19 @@ export default function DimensionsPage() {
       setControlNumberError('');
       return false;
     }
-    const existing = await Dimension.filter({ control_number: number });
-    if (existing.length > 0) {
-      setControlNumberError('An entry with this Control # already exists.');
-      return true;
+    try {
+      const isDuplicate = await Dimension.checkDuplicateControlNumber(number);
+      if (isDuplicate) {
+        setControlNumberError('An entry with this Control # already exists.');
+        return true;
+      }
+      setControlNumberError('');
+      return false;
+    } catch (error) {
+      console.error('Error checking duplicate control number:', error);
+      setControlNumberError('Error checking control number. Please try again.');
+      return true; // Assume duplicate to be safe
     }
-    setControlNumberError('');
-    return false;
   };
 
   useEffect(() => {

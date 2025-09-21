@@ -1,7 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { CallIns } from '@/lib/database';
-import { supabase } from '@/lib/supabase';
+import { CallIn } from '@/api/entities';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -79,25 +78,35 @@ export default function CallInsPage() {
   const timeOptions = generateTimeOptions();
 
   useEffect(() => {
-  const loadData = async () => {
-    if (!user) return;
-    
-    setIsLoading(true);
-    try {
-      // Fetch records with profile information ordered by submitted_at descending
-      const data = await CallIns.listCallInsWithProfiles('submitted_at desc');
-      setRecords(data);
-    } catch(e) {
-      console.error("Failed to load data", e);
-    }
-    setIsLoading(false);
-  };
+    const loadData = async () => {
+      if (!user) return;
+      
+      setIsLoading(true);
+      try {
+        // Filter records by selected date and carrier
+        const criteria = {
+          selectedDate: selectedDate,
+          carrier: carrierFilter === 'all' ? null : carrierFilter
+        };
+        const data = await CallIn.filter(criteria);
+        console.log('Fetched filtered call-ins data:', data);
+        setRecords(data);
+      } catch(e) {
+        console.error("Failed to load data", e);
+      }
+      setIsLoading(false);
+    };
     loadData();
-  }, [user]);
+  }, [user, selectedDate, carrierFilter]);
 
   const fetchRecords = async () => {
-    // Fetch records with profile information ordered by submitted_at descending
-    const data = await CallIns.listCallInsWithProfiles('submitted_at desc');
+    // Filter records by selected date and carrier
+    const criteria = {
+      selectedDate: selectedDate,
+      carrier: carrierFilter === 'all' ? null : carrierFilter
+    };
+    const data = await CallIn.filter(criteria);
+    console.log('Refreshed call-ins data:', data);
     setRecords(data);
   };
 
@@ -146,9 +155,7 @@ export default function CallInsPage() {
       setShowConfirm(false);
 
       try {
-        // Get current user for authentication
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error('Please sign in');
+        // Authentication is handled by the CallIn.create method
 
         // Validation guards to prevent 400 errors
         if (!CARRIERS.includes(confirmData.carrier)) {
@@ -172,7 +179,6 @@ export default function CallInsPage() {
           : confirmData.ready_time;
 
         const payload = {
-          submitted_by: user.id,
           carrier: confirmData.carrier,
           ready_time: formattedReadyTime,
           trailer_no: confirmData.trailer_number,
@@ -181,16 +187,7 @@ export default function CallInsPage() {
 
         console.log('Submitting payload:', payload);
 
-        const { data, error } = await supabase
-          .from('callins')
-          .insert(payload)
-          .select()
-          .single();
-
-        if (error) {
-          console.error('Insert failed', error);
-          throw error;
-        }
+        const data = await CallIn.create(payload);
 
         console.log('Insert successful:', data);
         
@@ -209,7 +206,7 @@ export default function CallInsPage() {
                 <ToastAction
                     altText="Undo"
                     onClick={async () => {
-                        await supabase.from('callins').delete().eq('id', data.id);
+                        await CallIn.delete(data.id);
                         await fetchRecords();
                         toast({ description: 'Entry successfully removed.' });
                     }}
@@ -230,9 +227,10 @@ export default function CallInsPage() {
       setIsLoading(false);
   };
   
-  const filteredRecords = records
-    .filter(record => isSameDay(record.submitted_at, selectedDate))
-    .filter(record => carrierFilter === 'all' || record.carrier === carrierFilter);
+  // Records are already filtered by the server-side query
+  const filteredRecords = records;
+
+  console.log('Total filtered records:', filteredRecords.length);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8 overflow-x-hidden">

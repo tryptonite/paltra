@@ -172,39 +172,33 @@ export interface Database {
       dimensions: {
         Row: {
           id: string
-          ship_via: string
-          control_number: string
-          wave_number: string
-          skids: unknown[]
-          cartons: unknown[]
-          user_role: string
-          user_department: string
           created_at: string
-          updated_at: string
+          submitted_by: string | null
+          control_no: string | null
+          length_in: number | null
+          width_in: number | null
+          height_in: number | null
+          qty: number
         }
         Insert: {
           id?: string
-          ship_via: string
-          control_number: string
-          wave_number: string
-          skids: unknown[]
-          cartons: unknown[]
-          user_role: string
-          user_department: string
           created_at?: string
-          updated_at?: string
+          submitted_by?: string | null
+          control_no?: string | null
+          length_in?: number | null
+          width_in?: number | null
+          height_in?: number | null
+          qty?: number
         }
         Update: {
           id?: string
-          ship_via?: string
-          control_number?: string
-          wave_number?: string
-          skids?: unknown[]
-          cartons?: unknown[]
-          user_role?: string
-          user_department?: string
           created_at?: string
-          updated_at?: string
+          submitted_by?: string | null
+          control_no?: string | null
+          length_in?: number | null
+          width_in?: number | null
+          height_in?: number | null
+          qty?: number
         }
       }
       truckloads: {

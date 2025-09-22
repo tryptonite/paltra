@@ -281,7 +281,7 @@ export default function LiveLoadsPage() {
           duration: 5000,
           action: (
               <ToastAction
-                  altText="Undo"
+                  alt="Undo"
                   onClick={async () => {
                       try {
                           console.log('=== TOAST UNDO DEBUG ===');

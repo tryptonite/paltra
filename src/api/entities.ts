@@ -11,11 +11,18 @@ const isSupabaseConfigured = () => {
          supabaseKey !== 'placeholder-key'
 }
 
+// Fail-fast wrapper so UI doesn't hang on slow requests
+const withTimeout = async <T = any>(promise: PromiseLike<T>, ms = 2500): Promise<T> => {
+  return await Promise.race([
+    promise as PromiseLike<T>,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)) as Promise<T>,
+  ])
+}
+
 // Create a Supabase-compatible API for Dimension that matches the existing interface
 export const Dimension = {
   async list(orderBy?: string, limit?: number) {
     try {
-      // Fall back to dataClient if Supabase is not configured
       if (!isSupabaseConfigured()) {
         console.warn('Supabase not configured, falling back to local dataClient')
         return await dataClient.entities.Dimension.list(orderBy, limit)
@@ -34,194 +41,259 @@ export const Dimension = {
       }
       
       // Use v_dimensions view to get user display names
-      const { data: dimensionsData, error } = await supabase
-        .from('v_dimensions')
-        .select('id, created_at, user_display, control_no, ship_via, skids, cartons')
-        .order('created_at', { ascending: false })
-        .limit(300)
+      const resp: any = await withTimeout(
+        supabase
+          .from('v_dimensions')
+          .select('id, created_at, control_no, wave_no, ship_via, skids, cartons, length_in, width_in, height_in, qty, volume_in3, user_display')
+          .order('created_at', { ascending: false })
+          .limit(limit || 300) as any,
+        2500
+      )
+      const { data: dimensionsData, error } = resp
 
-      if (error) throw error
+      if (error) throw error as any
       const data = dimensionsData || []
       
       // Transform the data to match the expected format
-      return data.map(record => ({
+      return data.map((record: any) => ({
         ...record,
         control_number: record.control_no, // Map control_no back to control_number
         created_date: record.created_at,
         updated_date: record.created_at, // Use created_at since no updated_at
         created_by: record.user_display || 'Unknown User', // Use actual user display name
-        skids: [{ count: record.skids }], // Convert count back to array format for UI
-        cartons: [{ count: record.cartons }], // Convert count back to array format for UI
-        wave_number: '', // Not in actual table, provide empty default
+        length: record.length_in,
+        width: record.width_in,
+        height: record.height_in,
+        quantity: record.qty,
         user_role: 'user',
         user_department: 'unknown'
       }))
     } catch (error) {
-      console.error('Error fetching dimensions from Supabase, falling back to local data:', error)
-      // Fall back to local dataClient on error
+      console.warn('Dimension.list falling back due to error/timeout:', error)
       return await dataClient.entities.Dimension.list(orderBy, limit)
     }
   },
 
   async filter(criteria: any) {
-    try {
-      if (!isSupabaseConfigured()) {
-        console.warn('Supabase not configured, falling back to local dataClient')
-        return await dataClient.entities.Dimension.filter(criteria)
-      }
-
-      // Use v_dimensions view to get user display names
-      let query = supabase
-        .from('v_dimensions')
-        .select('id, created_at, user_display, control_no, ship_via, skids, cartons')
-
-      // Apply filters
-      if (criteria.control_number) {
-        query = query.eq('control_no', criteria.control_number)
-      }
-      if (criteria.ship_via) {
-        query = query.eq('ship_via', criteria.ship_via)
-      }
-      
-      const { data: dimensionsData, error } = await query
-      if (error) throw error
-      
-      const data = dimensionsData || []
-      return data.map(record => ({
-        ...record,
-        control_number: record.control_no, // Map control_no back to control_number
-        created_date: record.created_at,
-        updated_date: record.created_at, // Use created_at since no updated_at
-        created_by: record.user_display || 'Unknown User', // Use actual user display name
-        skids: [{ count: record.skids }], // Convert count back to array format for UI
-        cartons: [{ count: record.cartons }], // Convert count back to array format for UI
-        wave_number: '', // Not in actual table, provide empty default
-        user_role: 'user',
-        user_department: 'unknown'
-      }))
-    } catch (error) {
-      console.error('Error filtering dimensions from Supabase, falling back to local data:', error)
-      return await dataClient.entities.Dimension.filter(criteria)
+    if (!isSupabaseConfigured()) {
+      throw new Error('Supabase not configured. Please check your environment variables.')
     }
+
+    let query = supabase
+      .from('v_dimensions')
+      .select('id, created_at, control_no, length_in, width_in, height_in, qty, user_display');
+
+    // Apply filters
+    if (criteria.control_number) {
+      query = query.eq('control_no', criteria.control_number)
+    }
+    if (criteria.length) {
+      query = query.eq('length_in', criteria.length)
+    }
+    if (criteria.width) {
+      query = query.eq('width_in', criteria.width)
+    }
+    if (criteria.height) {
+      query = query.eq('height_in', criteria.height)
+    }
+    if (criteria.quantity) {
+      query = query.eq('qty', criteria.quantity)
+    }
+    if (criteria.created_date) {
+      const sel = new Date(criteria.created_date)
+      const start = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate())
+      const end = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate() + 1)
+      query = query
+        .gte('created_at', start.toISOString())
+        .lt('created_at', end.toISOString())
+    }
+
+    const resp: any = await withTimeout(query.order('created_at', { ascending: false }) as any, 2500)
+    const { data: dimensionsData, error } = resp
+    if (error) throw error
+    
+    return (dimensionsData || []).map((record: any) => ({
+      ...record,
+      control_number: record.control_no, // Map control_no back to control_number
+      created_date: record.created_at,
+      updated_date: record.created_at, // Use created_at since no updated_at
+      created_by: record.user_display || 'Unknown User',
+      length: record.length_in,
+      width: record.width_in,
+      height: record.height_in,
+      quantity: record.qty,
+      user_role: 'user',
+      user_department: 'unknown'
+    }));
   },
 
   async create(payload: any) {
-    try {
-      if (!isSupabaseConfigured()) {
-        console.warn('Supabase not configured, falling back to local dataClient')
-        return await dataClient.entities.Dimension.create(payload)
-      }
-
-      // Get current user from auth context
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        throw new Error('User must be authenticated to create dimensions')
-      }
-
-      // Transform payload to match actual database schema
-      const dbPayload = {
-        ship_via: payload.ship_via,
-        control_no: payload.control_number, // Map control_number to control_no
-        skids: payload.skids?.length || 0, // Convert array to count
-        cartons: payload.cartons?.length || 0, // Convert array to count
-        submitted_by: user.id // Use authenticated user ID
-      }
-
-      const result = await Dimensions.create(dbPayload)
+    if (!isSupabaseConfigured()) {
+      throw new Error('Supabase not configured. Please check your environment variables.')
+    }
       
-      // Transform result to match expected format
-      return {
-        ...result,
-        control_number: result.control_no, // Map control_no back to control_number
-        created_date: result.created_at,
-        updated_date: result.created_at, // Use created_at since no updated_at
-        created_by: 'User', // Placeholder for newly created record
-        skids: [{ count: result.skids }], // Convert count back to array format for UI
-        cartons: [{ count: result.cartons }], // Convert count back to array format for UI
-        wave_number: '', // Not in actual table, provide empty default
-        user_role: 'user',
-        user_department: 'unknown'
-      }
-    } catch (error) {
-      console.error('Error creating dimension in Supabase, falling back to local data:', error)
-      return await dataClient.entities.Dimension.create(payload)
+    // Get current user from auth context
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      throw new Error('User must be authenticated to create dimensions')
+    }
+      
+    // Handle the new structure with ship_via, skids, cartons arrays
+    const controlNumber = payload.control_no || payload.control_number
+    const shipVia = payload.ship_via
+    const waveNumber = payload.wave_number
+    const skidsArray = payload.skids || []
+    const cartonsArray = payload.cartons || []
+      
+    // Create records for all skids
+    const skidRecords = skidsArray.map(skid => ({
+      control_no: controlNumber,
+      ship_via: shipVia,
+      length_in: parseFloat(skid.length) || 0,
+      width_in: parseFloat(skid.width) || 0,
+      height_in: parseFloat(skid.height) || 0,
+      qty: 1,
+      skids: skidsArray.length, // Total count of skids
+      cartons: cartonsArray.length, // Total count of cartons
+      submitted_by: user.id
+    }))
+      
+    // Create records for all cartons  
+    const cartonRecords = cartonsArray.map(carton => ({
+      control_no: controlNumber,
+      ship_via: shipVia,
+      length_in: parseFloat(carton.length) || 0,
+      width_in: parseFloat(carton.width) || 0,
+      height_in: parseFloat(carton.height) || 0,
+      qty: 1,
+      skids: skidsArray.length, // Total count of skids
+      cartons: cartonsArray.length, // Total count of cartons
+      submitted_by: user.id
+    }))
+      
+    // Combine all records
+    const allRecords = [...skidRecords, ...cartonRecords]
+      
+    if (allRecords.length === 0) {
+      throw new Error('No valid dimensions provided')
+    }
+      
+    // Insert all records
+    const { data: result, error } = await supabase
+      .from('dimensions')
+      .insert(allRecords)
+      .select();
+
+    if (error) throw error;
+      
+    // Return the first record (they all have the same metadata)
+    const firstRecord = result[0]
+    return {
+      id: firstRecord.id,
+      control_number: firstRecord.control_no,
+      ship_via: firstRecord.ship_via,
+      skids: firstRecord.skids,
+      cartons: firstRecord.cartons,
+      created_date: firstRecord.created_at,
+      updated_date: firstRecord.created_at,
+      created_by: 'User',
+      user_role: payload.user_role || 'user',
+      user_department: payload.user_department || 'unknown'
     }
   },
 
   async update(id: string, updates: any) {
-    try {
-      if (!isSupabaseConfigured()) {
-        console.warn('Supabase not configured, falling back to local dataClient')
-        return await dataClient.entities.Dimension.update(id, updates)
-      }
+    if (!isSupabaseConfigured()) {
+      throw new Error('Supabase not configured. Please check your environment variables.')
+    }
 
-      // Transform updates to match actual database schema
-      const dbUpdates = { ...updates }
-      if (updates.control_number) {
-        dbUpdates.control_no = updates.control_number
-        delete dbUpdates.control_number
-      }
-      if (updates.skids) {
-        dbUpdates.skids = updates.skids.length || 0
-      }
-      if (updates.cartons) {
-        dbUpdates.cartons = updates.cartons.length || 0
-      }
+    // Transform updates to match actual database schema
+    const dbUpdates = { ...updates }
+    if (updates.control_number) {
+      dbUpdates.control_no = updates.control_number
+      delete dbUpdates.control_number
+    }
+    if (updates.length) {
+      dbUpdates.length_in = updates.length
+      delete dbUpdates.length
+    }
+    if (updates.width) {
+      dbUpdates.width_in = updates.width
+      delete dbUpdates.width
+    }
+    if (updates.height) {
+      dbUpdates.height_in = updates.height
+      delete dbUpdates.height
+    }
+    if (updates.quantity) {
+      dbUpdates.qty = updates.quantity
+      delete dbUpdates.quantity
+    }
 
-      const result = await Dimensions.update(id, dbUpdates)
-      return {
-        ...result,
-        control_number: result.control_no, // Map control_no back to control_number
-        created_date: result.created_at,
-        updated_date: result.created_at, // Use created_at since no updated_at
-        created_by: 'User', // Placeholder for updated record
-        skids: [{ count: result.skids }], // Convert count back to array format for UI
-        cartons: [{ count: result.cartons }], // Convert count back to array format for UI
-        wave_number: '', // Not in actual table, provide empty default
-        user_role: 'user',
-        user_department: 'unknown'
-      }
-    } catch (error) {
-      console.error('Error updating dimension in Supabase, falling back to local data:', error)
-      return await dataClient.entities.Dimension.update(id, updates)
+    const result = await Dimensions.update(id, dbUpdates)
+    return {
+      ...result,
+      control_number: result.control_no, // Map control_no back to control_number
+      created_date: result.created_at,
+      updated_date: result.created_at, // Use created_at since no updated_at
+      created_by: 'User', // Placeholder for updated record
+      length: result.length_in,
+      width: result.width_in,
+      height: result.height_in,
+      quantity: result.qty,
+      user_role: 'user',
+      user_department: 'unknown'
     }
   },
 
   async delete(id: string) {
-    try {
-      if (!isSupabaseConfigured()) {
-        console.warn('Supabase not configured, falling back to local dataClient')
-        return await dataClient.entities.Dimension.delete(id)
-      }
-
-      await Dimensions.delete(id)
-    } catch (error) {
-      console.error('Error deleting dimension in Supabase, falling back to local data:', error)
-      return await dataClient.entities.Dimension.delete(id)
+    if (!isSupabaseConfigured()) {
+      throw new Error('Supabase not configured. Please check your environment variables.')
     }
+
+    await Dimensions.delete(id)
   },
 
   // Helper function for duplicate control number check
   async checkDuplicateControlNumber(controlNumber: string) {
-    try {
-      if (!isSupabaseConfigured()) {
-        console.warn('Supabase not configured, falling back to local dataClient duplicate check')
-        const existing = await dataClient.entities.Dimension.filter({ control_number: controlNumber })
-        return existing.length > 0
-      }
-
-      // Use control_no field name for the actual table
-      return await checkDuplicateControlNumber(controlNumber, 'dimensions', 'control_no')
-    } catch (error) {
-      console.error('Error checking duplicate control number in Supabase, falling back to local check:', error)
-      try {
-        const existing = await dataClient.entities.Dimension.filter({ control_number: controlNumber })
-        return existing.length > 0
-      } catch (fallbackError) {
-        console.error('Error in fallback duplicate check:', fallbackError)
-        return false // If all else fails, allow the operation
-      }
+    if (!isSupabaseConfigured()) {
+      throw new Error('Supabase not configured. Please check your environment variables.')
     }
+
+    // Use control_no field name for the actual table
+    return await checkDuplicateControlNumber(controlNumber, 'dimensions', 'control_no')
+  },
+
+  // Read raw rows from v_dimensions view
+  async readRawRows(controlNo: string) {
+    if (!isSupabaseConfigured()) {
+      throw new Error('Supabase not configured. Please check your environment variables.')
+    }
+
+    const { data, error } = await supabase
+      .from('v_dimensions')
+      .select('id, created_at, control_no, wave_no, ship_via, skids, cartons, length_in, width_in, height_in, qty, volume_in3, user_display')
+      .eq('control_no', controlNo)
+      .order('created_at', { ascending: true });
+
+    if (error) throw error
+    return data || []
+  },
+
+  // Read per-order summary from v_dimensions_summary view
+  async readOrderSummary(controlNo: string) {
+    if (!isSupabaseConfigured()) {
+      throw new Error('Supabase not configured. Please check your environment variables.')
+    }
+
+    const { data, error } = await supabase
+      .from('v_dimensions_summary')
+      .select('*')
+      .eq('control_no', controlNo)
+      .single();
+
+    if (error) throw error
+    return data
   }
 }
 
@@ -280,19 +352,24 @@ export const CallIn = {
         return await dataClient.entities.CallIn.list(orderBy, limit)
       }
 
-      const { data: callinsData, error } = await supabase
-        .from('v_callins')
-        .select('id,created_at,user_display,carrier,ready_time,trailer_no,dock,submitted_at')
-        .order('created_at', { ascending: false })
-        .limit(300)
+      const resp: any = await withTimeout(
+        supabase
+          .from('v_callins')
+          .select('id,submitted_at,carrier,ready_time,trailer_no,dock,user_display')
+          .order('submitted_at', { ascending: false })
+          .limit(300) as any,
+        2500
+      )
+
+      const { data: callinsData, error } = resp
 
       if (error) throw error
       const data = callinsData || []
       
       return data.map(record => ({
         ...record,
-        created_date: record.created_at,
-        updated_date: record.submitted_at,
+        created_date: record.submitted_at,
+        updated_date: record.submitted_at, // Use submitted_at since updated_at doesn't exist
         created_by: record.user_display || 'Unknown User',
         user_role: 'user',
         user_department: 'unknown',
@@ -302,7 +379,7 @@ export const CallIn = {
         }
       }))
     } catch (error) {
-      console.error('Error fetching call-ins from Supabase, falling back to local data:', error)
+      console.warn('CallIn.list falling back due to error/timeout:', error)
       return await dataClient.entities.CallIn.list(orderBy, limit)
     }
   },
@@ -316,7 +393,7 @@ export const CallIn = {
 
       let query = supabase
         .from('v_callins')
-        .select('id,submitted_at,user_display,carrier,ready_time,trailer_no,dock')
+        .select('id,submitted_at,carrier,ready_time,trailer_no,dock,user_display')
 
       if (criteria.carrier) {
         query = query.eq('carrier', criteria.carrier)
@@ -332,15 +409,16 @@ export const CallIn = {
           .gte('submitted_at', start.toISOString())
           .lt('submitted_at', end.toISOString())
       }
-      
-      const { data: callinsData, error } = await query.order('submitted_at', { ascending: true })
+
+      const resp: any = await withTimeout(query.order('submitted_at', { ascending: true }) as any, 2500)
+      const { data: callinsData, error } = resp
       if (error) throw error
       
       const data = callinsData || []
       return data.map(record => ({
         ...record,
         created_date: record.submitted_at,
-        updated_date: record.submitted_at,
+        updated_date: record.submitted_at, // Use submitted_at since updated_at doesn't exist
         created_by: record.user_display || 'Unknown User',
         user_role: 'user',
         user_department: 'unknown',
@@ -349,7 +427,7 @@ export const CallIn = {
         }
       }))
     } catch (error) {
-      console.error('Error filtering call-ins from Supabase, falling back to local data:', error)
+      console.warn('CallIn.filter falling back due to error/timeout:', error)
       return await dataClient.entities.CallIn.filter(criteria)
     }
   },
@@ -362,12 +440,14 @@ export const CallIn = {
       }
 
       const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('User not authenticated')
+
       const dbPayload = {
         carrier: payload.carrier,
         ready_time: payload.ready_time,
         trailer_no: payload.trailer_no,
-        dock: payload.dock || null,
-        submitted_by: user?.id,
+        dock: payload.dock || 0,
+        submitted_by: user.id,
       }
 
       const { data: insertData, error: insErr } = await supabase
@@ -381,7 +461,7 @@ export const CallIn = {
       return {
         ...insertData,
         created_date: insertData.submitted_at,
-        updated_date: insertData.updated_at,
+        updated_date: insertData.submitted_at, // Use submitted_at since updated_at doesn't exist
         created_by: 'User',
         user_role: 'user',
         user_department: 'unknown',
@@ -424,7 +504,7 @@ export const CallIn = {
       return {
         ...result.data,
         created_date: result.data.submitted_at,
-        updated_date: result.data.updated_at,
+        updated_date: result.data.submitted_at, // Use submitted_at since updated_at doesn't exist
         created_by: 'User',
         user_role: 'user',
         user_department: 'unknown',
@@ -434,7 +514,7 @@ export const CallIn = {
       }
     } catch (error) {
       console.error('Error updating call-in in Supabase, falling back to local data:', error)
-      return await dataClient.entities.CallIn.update(id, updates)
+    return await dataClient.entities.CallIn.update(id, updates)
     }
   },
 
@@ -453,7 +533,7 @@ export const CallIn = {
       if (error) throw error
     } catch (error) {
       console.error('Error deleting call-in in Supabase, falling back to local data:', error)
-      return await dataClient.entities.CallIn.delete(id)
+    return await dataClient.entities.CallIn.delete(id)
     }
   },
 
@@ -472,11 +552,16 @@ export const Changeover = {
         return await dataClient.entities.Changeover.list(orderBy, limit)
       }
 
-      const { data, error } = await supabase
-        .from('v_changeovers')
-        .select('id,created_at,department,user_display,original_ship_via,new_ship_via,control_no,wave_no,pallets,cartons,so_no,delivery_no')
-        .order('created_at', { ascending: false })
-        .limit(300)
+      const resp: any = await withTimeout(
+        supabase
+          .from('v_changeovers')
+          .select('id,created_at,department,user_display,original_ship_via,new_ship_via,control_no,wave_no,pallets,cartons,so_no,delivery_no')
+          .order('created_at', { ascending: false })
+          .limit(300) as any,
+        2500
+      )
+
+      const { data, error } = resp
 
       if (error) throw error
       const data_mapped = (data || []).map(record => ({
@@ -510,7 +595,8 @@ export const Changeover = {
         query = query.eq('department', criteria.department)
       }
 
-      const { data, error } = await query.order('created_at', { ascending: false })
+      const resp: any = await withTimeout(query.order('created_at', { ascending: false }) as any, 2500)
+      const { data, error } = resp
       if (error) throw error
       
       const data_mapped = (data || []).map(record => ({
@@ -614,11 +700,16 @@ export const BTX = {
         return await dataClient.entities.BTX.list(orderBy, limit)
       }
 
-      const { data, error } = await supabase
-        .from('v_btx')
-        .select('id,created_at,user_display,type,control_no,wave_no,tracking_no,pallets,cartons')
-        .order('created_at', { ascending: false })
-        .limit(300)
+      const resp: any = await withTimeout(
+        supabase
+          .from('v_btx')
+          .select('id,created_at,user_display,type,control_no,wave_no,tracking_no,pallets,cartons')
+          .order('created_at', { ascending: false })
+          .limit(300) as any,
+        2500
+      )
+
+      const { data, error } = resp
 
       if (error) throw error
       const data_mapped = (data || []).map(record => ({
@@ -655,7 +746,8 @@ export const BTX = {
         query = query.eq('control_no', criteria.control_number)
       }
 
-      const { data, error } = await query.order('created_at', { ascending: false })
+      const resp: any = await withTimeout(query.order('created_at', { ascending: false }) as any, 2500)
+      const { data, error } = resp
       if (error) throw error
       
       const data_mapped = (data || []).map(record => ({
@@ -779,11 +871,16 @@ export const LineCount = {
         return await dataClient.entities.LineCount.list(orderBy, limit)
       }
 
-      const { data, error } = await supabase
-        .from('v_line_counts')
-        .select('id,count_date,time_period,preferreds,parcels,ltl,total,user_display,submitted_at')
-        .order('submitted_at', { ascending: false })
-        .limit(limit || 200)
+      const resp: any = await withTimeout(
+        supabase
+          .from('v_line_counts')
+          .select('id,count_date,time_period,preferreds,parcels,ltl,total,user_display,submitted_at')
+          .order('submitted_at', { ascending: false })
+          .limit(limit || 200) as any,
+        2500
+      )
+
+      const { data, error } = resp
 
       if (error) throw error
       const data_mapped = (data || []).map(record => ({
@@ -814,7 +911,8 @@ export const LineCount = {
         query = query.eq('count_date', criteria.date)
       }
 
-      const { data, error } = await query.order('submitted_at', { ascending: false })
+      const resp: any = await withTimeout(query.order('submitted_at', { ascending: false }) as any, 2500)
+      const { data, error } = resp
       if (error) throw error
       
       const data_mapped = (data || []).map(record => ({
@@ -913,11 +1011,16 @@ export const Truckload = {
         return await dataClient.entities.Truckload.list(orderBy, limit)
       }
 
-      const { data, error } = await supabase
-        .from('v_truckloads')
-        .select('id,pickup_date,department,ship_via,po_numbers,control_numbers,wave_no,company_name,destination,pieces,weight_lbs,is_completed,completed_at,user_display')
-        .order('pickup_date', { ascending: true })
-        .limit(300)
+      const resp: any = await withTimeout(
+        supabase
+          .from('v_truckloads')
+          .select('id,pickup_date,department,ship_via,po_numbers,control_numbers,wave_no,company_name,destination,pieces,weight_lbs,is_completed,completed_at,user_display')
+          .order('pickup_date', { ascending: true })
+          .limit(300) as any,
+        2500
+      )
+
+      const { data, error } = resp
 
       if (error) throw error
       const data_mapped = (data || []).map(record => ({
@@ -965,7 +1068,8 @@ export const Truckload = {
         query = query.gte('completed_at', oneWeekAgo)
       }
 
-      const { data, error } = await query
+      const resp: any = await withTimeout(query as any, 2500)
+      const { data, error } = resp
       if (error) throw error
       
       const data_mapped = (data || []).map(record => ({

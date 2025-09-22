@@ -192,11 +192,11 @@ export const Truckloads = new DatabaseService('truckloads')
 export const DockDoors = new DatabaseService('dock_doors')
 
 // Helper functions for common operations
-export const checkDuplicateControlNumber = async (controlNumber: string, table: string) => {
+export const checkDuplicateControlNumber = async (controlNumber: string, table: string, fieldName: string = 'control_number') => {
   const { data, error } = await supabase
     .from(table)
     .select('id')
-    .eq('control_number', controlNumber)
+    .eq(fieldName, controlNumber)
     .limit(1)
 
   if (error) throw error

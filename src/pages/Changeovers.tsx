@@ -129,7 +129,7 @@ export default function ChangeoversPage() {
             duration: 10000,
             action: (
                 <ToastAction
-                    altText="Undo"
+                    alt="Undo"
                     onClick={async () => {
                         await Changeover.delete(newRecord.id);
                         await loadData();

@@ -204,7 +204,7 @@ export default function CallInsPage() {
             duration: 5000,
             action: (
                 <ToastAction
-                    altText="Undo"
+                    alt="Undo"
                     onClick={async () => {
                         await CallIn.delete(data.id);
                         await fetchRecords();

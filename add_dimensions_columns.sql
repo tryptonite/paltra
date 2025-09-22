@@ -1,0 +1,1 @@
+ALTER TABLE dimensions ADD COLUMN IF NOT EXISTS ship_via TEXT; ALTER TABLE dimensions ADD COLUMN IF NOT EXISTS wave_number TEXT;

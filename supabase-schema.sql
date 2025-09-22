@@ -10,23 +10,21 @@ CREATE TABLE IF NOT EXISTS profiles (
   role TEXT DEFAULT 'user' CHECK (role IN ('user', 'admin')),
   company TEXT,
   is_approved BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Create BTX entries table
 CREATE TABLE IF NOT EXISTS btx_entries (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   shipment_type TEXT NOT NULL,
-  control_number TEXT NOT NULL,
+  control_no TEXT NOT NULL,
   wave_number TEXT NOT NULL,
   tracking_number TEXT NOT NULL,
   pallets JSONB NOT NULL DEFAULT '[]',
   cartons JSONB NOT NULL DEFAULT '[]',
   user_role TEXT NOT NULL,
   user_department TEXT NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Create live loads table
@@ -52,22 +50,19 @@ CREATE TABLE IF NOT EXISTS callins (
   ready_time TEXT NOT NULL,
   trailer_no TEXT NOT NULL,
   dock INTEGER NOT NULL DEFAULT 0,
-  submitted_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  submitted_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Create dimensions table
 CREATE TABLE IF NOT EXISTS dimensions (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  ship_via TEXT NOT NULL,
-  control_number TEXT NOT NULL,
-  wave_number TEXT NOT NULL,
-  skids JSONB NOT NULL DEFAULT '[]',
-  cartons JSONB NOT NULL DEFAULT '[]',
-  user_role TEXT NOT NULL,
-  user_department TEXT NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  submitted_by UUID DEFAULT auth.uid(),
+  control_no TEXT,
+  length_in INTEGER,
+  width_in INTEGER,
+  height_in INTEGER,
+  qty INTEGER DEFAULT 1
 );
 
 -- Create truckloads table
@@ -76,7 +71,7 @@ CREATE TABLE IF NOT EXISTS truckloads (
   pickup_date TEXT NOT NULL,
   department TEXT NOT NULL,
   ship_via TEXT NOT NULL,
-  control_numbers TEXT[] NOT NULL DEFAULT '{}',
+  control_no TEXT[] NOT NULL DEFAULT '{}',
   wave_number TEXT NOT NULL,
   po_numbers TEXT[] NOT NULL DEFAULT '{}',
   company_name TEXT NOT NULL,
@@ -86,8 +81,7 @@ CREATE TABLE IF NOT EXISTS truckloads (
   weight DECIMAL(10,2) NOT NULL DEFAULT 0,
   user_role TEXT NOT NULL,
   user_department TEXT NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Create dock doors table
@@ -97,8 +91,7 @@ CREATE TABLE IF NOT EXISTS dock_doors (
   status TEXT NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'occupied', 'maintenance')),
   carrier TEXT,
   trailer_number TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Create indexes for better performance
@@ -303,3 +296,55 @@ CREATE TRIGGER update_truckloads_updated_at BEFORE UPDATE ON truckloads
 
 CREATE TRIGGER update_dock_doors_updated_at BEFORE UPDATE ON dock_doors
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Create views for better data access
+CREATE OR REPLACE VIEW v_callins AS
+SELECT 
+  c.id,
+  c.submitted_by,
+  c.submitted_at,
+  c.carrier,
+  c.ready_time,
+  c.trailer_no,
+  c.dock,
+  c.notes,
+  DATE(c.submitted_at AT TIME ZONE 'America/New_York') as submitted_date_est,
+  COALESCE(p.full_name, 'Unknown User') as user_display
+FROM callins c
+LEFT JOIN profiles p ON c.submitted_by = p.id;
+
+CREATE OR REPLACE VIEW v_dimensions AS
+SELECT 
+  d.id,
+  d.created_at,
+  d.submitted_by,
+  d.control_no,
+  d.length_in,
+  d.width_in,
+  d.height_in,
+  d.qty,
+  COALESCE(p.full_name, 'Unknown User') as user_display
+FROM dimensions d
+LEFT JOIN profiles p ON d.submitted_by = p.id;
+
+CREATE OR REPLACE VIEW v_dimensions_summary AS
+SELECT 
+  control_no,
+  COUNT(*) as total_items,
+  SUM(qty) as total_quantity,
+  MIN(created_at) as first_created,
+  MAX(created_at) as last_created,
+  STRING_AGG(DISTINCT user_display, ', ') as users,
+  JSON_AGG(
+    JSON_BUILD_OBJECT(
+      'id', id,
+      'length_in', length_in,
+      'width_in', width_in,
+      'height_in', height_in,
+      'qty', qty,
+      'created_at', created_at,
+      'user_display', user_display
+    ) ORDER BY created_at DESC
+  ) as items
+FROM v_dimensions
+GROUP BY control_no;

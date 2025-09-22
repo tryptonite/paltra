@@ -218,7 +218,7 @@ export default function TruckloadsPage() {
           duration: 10000,
           action: (
               <ToastAction
-                  altText="Undo"
+                  alt="Undo"
                   onClick={async () => {
                       if (newRecord?.id) { // Ensure newRecord and its id exist
                           await Truckload.delete(newRecord.id);

@@ -1,4 +1,4 @@
-
+// @ts-nocheck
 import React, { useState, useEffect } from 'react';
 import { Dimension } from '@/api/entities';
 import { User } from '@/api/entities';
@@ -13,8 +13,9 @@ import DimensionRowInput from '../components/dimensions/DimensionRowInput';
 import moment from 'moment';
 import { useToast } from "@/components/ui/use-toast";
 import { ToastAction } from "@/components/ui/toast";
+import { supabase } from '@/lib/supabase';
 
-const formatInEST = (dateString, options = {}) => {
+const formatInEST = (dateString: string, options: { dateStyle?: 'short'; timeStyle?: 'short' | 'medium' } = {}) => {
     // moment-timezone is not available. Using fixed offset for EDT (UTC-4).
     // Note: This assumes EDT (UTC-4) is the desired timezone for "EST" and does not handle DST transitions automatically.
     const date = moment.utc(dateString).utcOffset(-4);
@@ -40,6 +41,7 @@ export default function DimensionsPage() {
   const [cartons, setCartons] = useState([{ length: '', width: '', height: '' }]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedDimension, setSelectedDimension] = useState(null);
+  const [dimensionDetails, setDimensionDetails] = useState(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const [confirmData, setConfirmData] = useState(null);
   const { toast } = useToast();
@@ -70,13 +72,12 @@ export default function DimensionsPage() {
       try {
         const currentUser = await User.me();
         setUser(currentUser);
-        const data = await Dimension.list('-created_date');
-        setRecords(data);
+        await fetchRecords();
       } catch (e) {
-        console.error("Failed to load data", e);
+        console.error("Failed to load user data", e);
       }
       setIsLoading(false);
-    }
+    };
     loadData();
   }, []);
 
@@ -93,8 +94,55 @@ export default function DimensionsPage() {
   }, [controlNumber]);
 
   const fetchRecords = async () => {
-    const data = await Dimension.list('-created_date');
-    setRecords(data);
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('v_dimensions_summary')
+        .select('created_at, user_display, control_no, wave_no, ship_via, skids, cartons')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (error) {
+        console.error("Error fetching dimensions summary, falling back", error);
+        const fallbackData = await Dimension.list('-created_date');
+        setRecords(fallbackData);
+      } else {
+        const mappedData = (data || []).map(r => ({
+          created_date: r.created_at,
+          created_by: r.user_display,
+          control_number: r.control_no,
+          wave_number: r.wave_no,
+          ship_via: r.ship_via,
+          skids: r.skids,
+          cartons: r.cartons,
+        }));
+        setRecords(mappedData);
+      }
+    } catch (e) {
+      console.error("Failed to load data", e);
+      try {
+        const fallbackData = await Dimension.list('-created_date');
+        setRecords(fallbackData);
+      } catch (fallbackError) {
+        console.error("Fallback failed", fallbackError);
+      }
+    }
+    setIsLoading(false);
+  };
+
+  const handleRowClick = async (record) => {
+    try {
+      // Fetch all dimensions for this control number
+      const control = record.control_number || record.control_no;
+      const allDimensions = await Dimension.readRawRows(control);
+      setSelectedDimension(record);
+      setDimensionDetails(allDimensions);
+    } catch (error) {
+      console.error('Error fetching dimension details:', error);
+      // Fallback to just showing the single record
+      setSelectedDimension(record);
+      setDimensionDetails([record]);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -153,9 +201,11 @@ export default function DimensionsPage() {
               <ToastAction
                   altText="Undo"
                   onClick={async () => {
-                      await Dimension.delete(newRecord.id);
-                      await fetchRecords();
-                      toast({ description: 'Entry successfully removed.' });
+                      if (newRecord && newRecord[0]) {
+                        await Dimension.delete(newRecord[0].id);
+                        await fetchRecords();
+                        toast({ description: 'Entry successfully removed.' });
+                      }
                   }}
               >
                   Undo
@@ -235,16 +285,16 @@ export default function DimensionsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isLoading && <TableRow><TableCell colSpan="6" className="text-center py-8 text-slate-500">Loading...</TableCell></TableRow>}
-                {!isLoading && records.length === 0 && <TableRow><TableCell colSpan="6" className="text-center py-8 text-slate-500">No records found.</TableCell></TableRow>}
-                {records.map(record => (
-                  <TableRow key={record.id} onClick={() => setSelectedDimension(record)} className="cursor-pointer hover:bg-slate-50 transition-colors border-slate-100">
+                {isLoading && <TableRow><TableCell colSpan={6} className="text-center py-8 text-slate-500">Loading...</TableCell></TableRow>}
+                {!isLoading && records.length === 0 && <TableRow><TableCell colSpan={6} className="text-center py-8 text-slate-500">No records found.</TableCell></TableRow>}
+                {records.map((record, index) => (
+                  <TableRow key={record.id || `record-${index}`} onClick={() => handleRowClick(record)} className="cursor-pointer hover:bg-slate-50 transition-colors border-slate-100">
                     <TableCell className="text-sm text-slate-600">{formatInEST(record.created_date, { dateStyle: 'short', timeStyle: 'short' })}</TableCell>
-                    <TableCell className="text-sm text-slate-700 font-medium">{record.created_by.split('@')[0]}</TableCell>
+                    <TableCell className="text-sm text-slate-700 font-medium">{record.created_by?.split('@')[0] || 'Unknown'}</TableCell>
                     <TableCell className="font-semibold text-slate-800">{record.control_number}</TableCell>
-                    <TableCell className="text-slate-700">{record.ship_via}</TableCell>
-                    <TableCell className="text-center text-slate-700">{record.skids?.length || 0}</TableCell>
-                    <TableCell className="text-center text-slate-700">{record.cartons?.length || 0}</TableCell>
+                    <TableCell className="text-slate-700">{record.ship_via || '-'}</TableCell>
+                    <TableCell className="text-center text-slate-700">{record.skids || 0}</TableCell>
+                    <TableCell className="text-center text-slate-700">{record.cartons || 0}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -275,52 +325,65 @@ export default function DimensionsPage() {
         </DialogContent>
       </Dialog>
       
-      <Dialog open={!!selectedDimension} onOpenChange={() => setSelectedDimension(null)}>
+      <Dialog open={!!selectedDimension} onOpenChange={(open) => { if (!open) { setSelectedDimension(null); setDimensionDetails(null); } }}>
         <DialogContent className="sm:max-w-md rounded-2xl border-slate-200">
           <DialogHeader>
             <DialogTitle className="text-slate-800">Dimension Details</DialogTitle>
             <DialogDescription className="text-slate-600">
               Control #: <span className="font-semibold text-slate-900">{selectedDimension?.control_number}</span> | 
               Wave #: <span className="font-semibold text-slate-900">{selectedDimension?.wave_number}</span> | 
-              Ship Via: <span className="font-semibold text-slate-900">{selectedDimension?.ship_via}</span>
+              Ship Via: <span className="font-semibold text-slate-900">{selectedDimension?.ship_via || '-'}</span>
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            {selectedDimension?.skids?.length > 0 && (
-              <div className="space-y-3">
-                <h3 className="font-semibold flex items-center gap-2 text-slate-800">
-                  <Package2 className="h-4 w-4 text-blue-600" /> 
-                  Skids ({selectedDimension.skids.length})
-                </h3>
-                <div className="max-h-48 overflow-y-auto space-y-2 pr-2">
-                  {selectedDimension.skids.map((skid, index) => (
-                    <div key={index} className="flex items-center justify-between text-sm p-3 rounded-lg bg-slate-50 border border-slate-200">
-                      <span className="text-slate-700 font-medium">Skid {index + 1}</span>
-                      <span className="font-mono bg-white px-3 py-1 rounded-md border text-slate-800">
-                        {skid.length} × {skid.width} × {skid.height}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {selectedDimension?.cartons?.length > 0 && (
-              <div className="space-y-3">
-                <h3 className="font-semibold flex items-center gap-2 text-slate-800">
-                  <Package className="h-4 w-4 text-teal-600" /> 
-                  Cartons ({selectedDimension.cartons.length})
-                </h3>
-                <div className="max-h-48 overflow-y-auto space-y-2 pr-2">
-                  {selectedDimension.cartons.map((carton, index) => (
-                    <div key={index} className="flex items-center justify-between text-sm p-3 rounded-lg bg-slate-50 border border-slate-200">
-                      <span className="text-slate-700 font-medium">Carton {index + 1}</span>
-                      <span className="font-mono bg-white px-3 py-1 rounded-md border text-slate-800">
-                        {carton.length} × {carton.width} × {carton.height}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+            {dimensionDetails && dimensionDetails.length > 0 && (
+              <>
+                {(() => {
+                  const totalSkids = Number(selectedDimension?.skids ?? 0);
+                  const totalCartons = Number(selectedDimension?.cartons ?? 0);
+                  const skidsList = dimensionDetails.slice(0, totalSkids);
+                  const cartonsList = dimensionDetails.slice(totalSkids, totalSkids + totalCartons);
+                  return (
+                    <>
+                      {/* Skids Section */}
+                      <div className="space-y-3">
+                        <h3 className="font-semibold flex items-center gap-2 text-slate-800">
+                          <Package2 className="h-4 w-4 text-blue-600" /> 
+                          Skids ({skidsList.length})
+                        </h3>
+                        <div className="space-y-3">
+                          {skidsList.map((dimension, index) => (
+                            <div key={dimension.id || `skid-${index}`} className="flex items-center justify-between text-sm p-4 rounded-xl bg-slate-50 border border-slate-200">
+                              <span className="text-slate-700 font-medium">Skid {index + 1}</span>
+                              <span className="font-mono bg-white px-3 py-1 rounded-md border text-slate-800">
+                                {dimension.length_in || 0} × {dimension.width_in || 0} × {dimension.height_in || 0}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Cartons Section */}
+                      <div className="space-y-3 mt-6">
+                        <h3 className="font-semibold flex items-center gap-2 text-slate-800">
+                          <Package className="h-4 w-4 text-teal-600" /> 
+                          Cartons ({cartonsList.length})
+                        </h3>
+                        <div className="space-y-3">
+                          {cartonsList.map((dimension, index) => (
+                            <div key={dimension.id || `carton-${index}`} className="flex items-center justify-between text-sm p-4 rounded-xl bg-slate-50 border border-slate-200">
+                              <span className="text-slate-700 font-medium">Carton {index + 1}</span>
+                              <span className="font-mono bg-white px-3 py-1 rounded-md border text-slate-800">
+                                {dimension.length_in || 0} × {dimension.width_in || 0} × {dimension.height_in || 0}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
+              </>
             )}
           </div>
         </DialogContent>

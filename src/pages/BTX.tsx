@@ -199,7 +199,7 @@ Date: ${new Date().toLocaleString()}
         duration: 10000,
         action: (
             <ToastAction
-                altText="Undo"
+                alt="Undo"
                 onClick={async () => {
                     await BTX.delete(newRecord.id);
                     await fetchRecords();

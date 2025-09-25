@@ -58,6 +58,7 @@ export const Dimension = {
       return data.map((record: any) => ({
         ...record,
         control_number: record.control_no, // Map control_no back to control_number
+        wave_number: record.wave_no, // Map wave_no back to wave_number
         created_date: record.created_at,
         updated_date: record.created_at, // Use created_at since no updated_at
         created_by: record.user_display || 'Unknown User', // Use actual user display name
@@ -81,11 +82,14 @@ export const Dimension = {
 
     let query = supabase
       .from('v_dimensions')
-      .select('id, created_at, control_no, length_in, width_in, height_in, qty, user_display');
+      .select('id, created_at, control_no, wave_no, length_in, width_in, height_in, qty, user_display');
 
     // Apply filters
     if (criteria.control_number) {
       query = query.eq('control_no', criteria.control_number)
+    }
+    if (criteria.wave_number) {
+      query = query.eq('wave_no', criteria.wave_number)
     }
     if (criteria.length) {
       query = query.eq('length_in', criteria.length)
@@ -115,6 +119,7 @@ export const Dimension = {
     return (dimensionsData || []).map((record: any) => ({
       ...record,
       control_number: record.control_no, // Map control_no back to control_number
+      wave_number: record.wave_no, // Map wave_no back to wave_number
       created_date: record.created_at,
       updated_date: record.created_at, // Use created_at since no updated_at
       created_by: record.user_display || 'Unknown User',
@@ -149,6 +154,7 @@ export const Dimension = {
     const skidRecords = skidsArray.map(skid => ({
       control_no: controlNumber,
       ship_via: shipVia,
+      wave_no: waveNumber,
       length_in: parseFloat(skid.length) || 0,
       width_in: parseFloat(skid.width) || 0,
       height_in: parseFloat(skid.height) || 0,
@@ -162,6 +168,7 @@ export const Dimension = {
     const cartonRecords = cartonsArray.map(carton => ({
       control_no: controlNumber,
       ship_via: shipVia,
+      wave_no: waveNumber,
       length_in: parseFloat(carton.length) || 0,
       width_in: parseFloat(carton.width) || 0,
       height_in: parseFloat(carton.height) || 0,
@@ -191,6 +198,7 @@ export const Dimension = {
     return {
       id: firstRecord.id,
       control_number: firstRecord.control_no,
+      wave_number: firstRecord.wave_no,
       ship_via: firstRecord.ship_via,
       skids: firstRecord.skids,
       cartons: firstRecord.cartons,
@@ -213,6 +221,10 @@ export const Dimension = {
       dbUpdates.control_no = updates.control_number
       delete dbUpdates.control_number
     }
+    if (updates.wave_number) {
+      dbUpdates.wave_no = updates.wave_number
+      delete dbUpdates.wave_number
+    }
     if (updates.length) {
       dbUpdates.length_in = updates.length
       delete dbUpdates.length
@@ -234,6 +246,7 @@ export const Dimension = {
     return {
       ...result,
       control_number: result.control_no, // Map control_no back to control_number
+      wave_number: result.wave_no, // Map wave_no back to wave_number
       created_date: result.created_at,
       updated_date: result.created_at, // Use created_at since no updated_at
       created_by: 'User', // Placeholder for updated record
@@ -700,31 +713,28 @@ export const BTX = {
         return await dataClient.entities.BTX.list(orderBy, limit)
       }
 
-      const resp: any = await withTimeout(
-        supabase
-          .from('v_btx')
-          .select('id,created_at,user_display,type,control_no,wave_no,tracking_no,pallets,cartons')
-          .order('created_at', { ascending: false })
-          .limit(300) as any,
-        2500
-      )
+       const resp: any = await withTimeout(
+         supabase
+           .from('v_btx_summary')
+           .select('*')
+           .order('created_at', { ascending: false })
+           .limit(300) as any,
+         2500
+       )
 
       const { data, error } = resp
 
       if (error) throw error
-      const data_mapped = (data || []).map(record => ({
-        ...record,
-        created_date: record.created_at,
-        updated_date: record.created_at,
-        created_by: record.user_display || 'Unknown User',
-        shipment_type: record.type,
-        control_number: record.control_no,
-        wave_number: record.wave_no,
-        tracking_number: record.tracking_no,
-        // Convert counts back to arrays for UI compatibility
-        pallets: Array(record.pallets || 0).fill({ length: '', width: '', height: '' }),
-        cartons: Array(record.cartons || 0).fill({ length: '', width: '', height: '' })
-      }))
+       const data_mapped = (data || []).map(record => ({
+         ...record,
+         created_date: record.created_at,
+         updated_date: record.created_at,
+         created_by: record.user_display || 'User',
+         control_number: record.control_no,
+         // Convert integers to arrays for UI compatibility
+         pallets: Array.isArray(record.pallets) ? record.pallets : [],
+         cartons: Array.isArray(record.cartons) ? record.cartons : []
+       }))
       return data_mapped
     } catch (error) {
       console.error('Error fetching BTX from Supabase, falling back to local data:', error)
@@ -738,9 +748,9 @@ export const BTX = {
         return await dataClient.entities.BTX.filter(criteria)
       }
 
-      let query = supabase
-        .from('v_btx')
-        .select('id,created_at,user_display,type,control_no,wave_no,tracking_no,pallets,cartons')
+       let query = supabase
+         .from('v_btx_summary')
+         .select('*')
 
       if (criteria.control_number) {
         query = query.eq('control_no', criteria.control_number)
@@ -750,18 +760,16 @@ export const BTX = {
       const { data, error } = resp
       if (error) throw error
       
-      const data_mapped = (data || []).map(record => ({
-        ...record,
-        created_date: record.created_at,
-        updated_date: record.created_at,
-        created_by: record.user_display || 'Unknown User',
-        shipment_type: record.type,
-        control_number: record.control_no,
-        wave_number: record.wave_no,
-        tracking_number: record.tracking_no,
-        pallets: Array(record.pallets || 0).fill({ length: '', width: '', height: '' }),
-        cartons: Array(record.cartons || 0).fill({ length: '', width: '', height: '' })
-      }))
+       const data_mapped = (data || []).map(record => ({
+         ...record,
+         created_date: record.created_at,
+         updated_date: record.created_at,
+         created_by: record.user_display || 'User',
+         control_number: record.control_no,
+         // Convert integers to arrays for UI compatibility
+         pallets: Array.isArray(record.pallets) ? record.pallets : [],
+         cartons: Array.isArray(record.cartons) ? record.cartons : []
+       }))
       return data_mapped
     } catch (error) {
       console.error('Error filtering BTX from Supabase, falling back to local data:', error)
@@ -778,21 +786,21 @@ export const BTX = {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error("User not authenticated")
 
-      const dbPayload = {
-        type: payload.shipment_type,
-        control_no: payload.control_number,
-        wave_no: payload.wave_number,
-        tracking_no: payload.tracking_number,
-        pallets: payload.pallets ? payload.pallets.length : 0,
-        cartons: payload.cartons ? payload.cartons.length : 0,
-        submitted_by: user.id
-      }
+       const dbPayload = {
+         type: payload.shipment_type,
+         control_no: payload.control_number,
+         wave_no: payload.wave_number,
+         tracking_no: payload.tracking_number,
+         pallets: payload.pallets || 0,
+         cartons: payload.cartons || 0,
+         submitted_by: user.id
+       }
 
-      const { data, error } = await supabase
-        .from('btx')
-        .insert(dbPayload)
-        .select()
-        .single()
+       const { data, error } = await supabase
+         .from('btx')
+         .insert(dbPayload)
+         .select()
+         .single()
 
       if (error) throw error
       return data
@@ -808,10 +816,10 @@ export const BTX = {
         return await dataClient.entities.BTX.update(id, payload)
       }
 
-      const { error } = await supabase
-        .from('btx')
-        .update(payload)
-        .eq('id', id)
+       const { error } = await supabase
+         .from('btx')
+         .update(payload)
+         .eq('id', id)
 
       if (error) throw error
       return { id, ...payload }
@@ -827,10 +835,10 @@ export const BTX = {
         return await dataClient.entities.BTX.delete(id)
       }
 
-      const { error } = await supabase
-        .from('btx')
-        .delete()
-        .eq('id', id)
+       const { error } = await supabase
+         .from('btx')
+         .delete()
+         .eq('id', id)
 
       if (error) throw error
       return true
@@ -847,11 +855,11 @@ export const BTX = {
         return existing.length > 0
       }
 
-      const { data, error } = await supabase
-        .from('btx')
-        .select('id')
-        .eq('control_no', controlNumber)
-        .limit(1)
+       const { data, error } = await supabase
+         .from('btx')
+         .select('id')
+         .eq('control_no', controlNumber)
+         .limit(1)
 
       if (error) throw error
       return data && data.length > 0

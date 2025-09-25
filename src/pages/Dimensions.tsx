@@ -133,10 +133,22 @@ export default function DimensionsPage() {
   const handleRowClick = async (record) => {
     try {
       // Fetch all dimensions for this control number
-      const control = record.control_number || record.control_no;
-      const allDimensions = await Dimension.readRawRows(control);
-      setSelectedDimension(record);
-      setDimensionDetails(allDimensions);
+      const controlNo = record.control_number || record.control_no;
+      const { data, error } = await supabase
+        .from('v_dimensions')
+        .select('id, created_at, control_no, wave_no, ship_via, skids, cartons, length_in, width_in, height_in, qty, volume_in3')
+        .eq('control_no', controlNo)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching dimension details:', error);
+        // Fallback to just showing the single record
+        setSelectedDimension(record);
+        setDimensionDetails([record]);
+      } else {
+        setSelectedDimension(record);
+        setDimensionDetails(data || []);
+      }
     } catch (error) {
       console.error('Error fetching dimension details:', error);
       // Fallback to just showing the single record
@@ -279,19 +291,21 @@ export default function DimensionsPage() {
                   <TableHead className="text-slate-600 font-medium w-32">Date & Time</TableHead>
                   <TableHead className="text-slate-600 font-medium w-20">User</TableHead>
                   <TableHead className="text-slate-600 font-medium w-20">Control #</TableHead>
+                  <TableHead className="text-slate-600 font-medium w-20">Wave #</TableHead>
                   <TableHead className="text-slate-600 font-medium w-20">Ship Via</TableHead>
                   <TableHead className="text-center text-slate-600 font-medium w-16">Skids</TableHead>
                   <TableHead className="text-center text-slate-600 font-medium w-16">Cartons</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isLoading && <TableRow><TableCell colSpan={6} className="text-center py-8 text-slate-500">Loading...</TableCell></TableRow>}
-                {!isLoading && records.length === 0 && <TableRow><TableCell colSpan={6} className="text-center py-8 text-slate-500">No records found.</TableCell></TableRow>}
+                {isLoading && <TableRow><TableCell colSpan={7} className="text-center py-8 text-slate-500">Loading...</TableCell></TableRow>}
+                {!isLoading && records.length === 0 && <TableRow><TableCell colSpan={7} className="text-center py-8 text-slate-500">No records found.</TableCell></TableRow>}
                 {records.map((record, index) => (
                   <TableRow key={record.id || `record-${index}`} onClick={() => handleRowClick(record)} className="cursor-pointer hover:bg-slate-50 transition-colors border-slate-100">
                     <TableCell className="text-sm text-slate-600">{formatInEST(record.created_date, { dateStyle: 'short', timeStyle: 'short' })}</TableCell>
                     <TableCell className="text-sm text-slate-700 font-medium">{record.created_by?.split('@')[0] || 'Unknown'}</TableCell>
                     <TableCell className="font-semibold text-slate-800">{record.control_number}</TableCell>
+                    <TableCell className="font-medium text-slate-800">{record.wave_number || '-'}</TableCell>
                     <TableCell className="text-slate-700">{record.ship_via || '-'}</TableCell>
                     <TableCell className="text-center text-slate-700">{record.skids || 0}</TableCell>
                     <TableCell className="text-center text-slate-700">{record.cartons || 0}</TableCell>

@@ -131,8 +131,8 @@ export default function BTXPage() {
       control_number: controlNumber,
       wave_number: waveNumber,
       tracking_number: trackingNumber,
-      pallets: pallets.filter(p => p.length && p.width && p.height),
-      cartons: cartons.filter(c => c.length && c.width && c.height),
+      pallets: pallets.filter(p => p.length && p.width && p.height).length,
+      cartons: cartons.filter(c => c.length && c.width && c.height).length,
     };
     setConfirmData(data);
     setShowConfirm(true);
@@ -160,19 +160,8 @@ export default function BTXPage() {
 <p>Wave Number: ${confirmData.wave_number}</p>
 <p>Tracking Number: ${confirmData.tracking_number}</p>
 
-<p>Pallets: ${confirmData.pallets.length}</p>
-<p>${confirmData.pallets
-  .map(
-      (p, i) => `Pallet ${i + 1}: ${p.length} × ${p.width} × ${p.height}`
-    )
-    .join('<br>')}</p>
-
-<p>Cartons: ${confirmData.cartons.length}</p>
-<p>${confirmData.cartons
-  .map(
-      (c, i) => `Carton ${i + 1}: ${c.length} × ${c.width} × ${c.height}`
-    )
-    .join('<br>')}</p>
+<p>Pallets: ${confirmData.pallets}</p>
+<p>Cartons: ${confirmData.cartons}</p>
 
 <p>Submitted by: ${user.full_name || user.email}</p>
 
@@ -363,8 +352,8 @@ Date: ${new Date().toLocaleString()}
                     <div className="flex justify-between"><span>Control #:</span><span>{confirmData.control_number}</span></div>
                     <div className="flex justify-between"><span>Wave #:</span><span>{confirmData.wave_number}</span></div>
                     <div className="flex justify-between"><span>Tracking #:</span><span>{confirmData.tracking_number}</span></div>
-                    <div className="flex justify-between"><span>Pallets count:</span><span>{confirmData.pallets.length}</span></div>
-                    <div className="flex justify-between"><span>Cartons count:</span><span>{confirmData.cartons.length}</span></div>
+                    <div className="flex justify-between"><span>Pallets count:</span><span>{confirmData.pallets}</span></div>
+                    <div className="flex justify-between"><span>Cartons count:</span><span>{confirmData.cartons}</span></div>
                 </div>
             )}
             <DialogFooter className="sm:justify-end gap-2">

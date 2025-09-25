@@ -14,17 +14,23 @@ CREATE TABLE IF NOT EXISTS profiles (
 );
 
 -- Create BTX entries table
-CREATE TABLE IF NOT EXISTS btx_entries (
+CREATE TABLE IF NOT EXISTS btx (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  shipment_type TEXT NOT NULL,
-  control_no TEXT NOT NULL,
-  wave_number TEXT NOT NULL,
-  tracking_number TEXT NOT NULL,
-  pallets JSONB NOT NULL DEFAULT '[]',
-  cartons JSONB NOT NULL DEFAULT '[]',
-  user_role TEXT NOT NULL,
-  user_department TEXT NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  submitted_by UUID DEFAULT auth.uid(),
+  type TEXT,
+  control_no TEXT,
+  wave_no TEXT,
+  tracking_no TEXT,
+  pallets INTEGER DEFAULT 0,
+  cartons INTEGER DEFAULT 0,
+  length_in NUMERIC,
+  width_in NUMERIC,
+  height_in NUMERIC,
+  qty INTEGER DEFAULT 1,
+  volume_in3 NUMERIC GENERATED ALWAYS AS (length_in * width_in * height_in) STORED,
+  submission_id UUID,
+  item_type TEXT
 );
 
 -- Create live loads table
@@ -97,8 +103,8 @@ CREATE TABLE IF NOT EXISTS dock_doors (
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_profiles_email ON profiles(email);
 CREATE INDEX IF NOT EXISTS idx_profiles_is_approved ON profiles(is_approved);
-CREATE INDEX IF NOT EXISTS idx_btx_entries_control_number ON btx_entries(control_number);
-CREATE INDEX IF NOT EXISTS idx_btx_entries_created_at ON btx_entries(created_at);
+CREATE INDEX IF NOT EXISTS idx_btx_control_number ON btx(control_no);
+CREATE INDEX IF NOT EXISTS idx_btx_created_at ON btx(created_at);
 CREATE INDEX IF NOT EXISTS idx_liveloads_created_time ON liveloads(created_time);
 CREATE INDEX IF NOT EXISTS idx_callins_submitted_at ON callins(submitted_at);
 CREATE INDEX IF NOT EXISTS idx_dimensions_control_number ON dimensions(control_number);
@@ -112,7 +118,7 @@ ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 
 -- Enable real-time for profiles table (for immediate user removal detection)
 ALTER PUBLICATION supabase_realtime ADD TABLE profiles;
-ALTER TABLE btx_entries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE btx ENABLE ROW LEVEL SECURITY;
 ALTER TABLE liveloads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE callins ENABLE ROW LEVEL SECURITY;
 ALTER TABLE dimensions ENABLE ROW LEVEL SECURITY;
@@ -142,25 +148,25 @@ CREATE POLICY "Admins can update all profiles" ON profiles
     )
   );
 
--- RLS Policies for btx_entries table
-CREATE POLICY "Authenticated users can view btx entries" ON btx_entries
+-- RLS Policies for btx table
+CREATE POLICY "Authenticated users can view btx entries" ON btx
   FOR SELECT USING (auth.role() = 'authenticated');
 
-CREATE POLICY "Authenticated users can insert btx entries" ON btx_entries
+CREATE POLICY "Authenticated users can insert btx entries" ON btx
   FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 
-CREATE POLICY "Users can update their own btx entries" ON btx_entries
+CREATE POLICY "Users can update their own btx entries" ON btx
   FOR UPDATE USING (
     EXISTS (
-      SELECT 1 FROM users 
+      SELECT 1 FROM profiles 
       WHERE id = auth.uid() AND (role = 'admin' OR id = auth.uid())
     )
   );
 
-CREATE POLICY "Users can delete their own btx entries" ON btx_entries
+CREATE POLICY "Users can delete their own btx entries" ON btx
   FOR DELETE USING (
     EXISTS (
-      SELECT 1 FROM users 
+      SELECT 1 FROM profiles 
       WHERE id = auth.uid() AND (role = 'admin' OR id = auth.uid())
     )
   );
@@ -280,7 +286,7 @@ $$ language 'plpgsql';
 CREATE TRIGGER update_profiles_updated_at BEFORE UPDATE ON profiles
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER update_btx_entries_updated_at BEFORE UPDATE ON btx_entries
+CREATE TRIGGER update_btx_updated_at BEFORE UPDATE ON btx
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Note: liveloads table doesn't have updated_at column, so no trigger needed
@@ -348,3 +354,31 @@ SELECT
   ) as items
 FROM v_dimensions
 GROUP BY control_no;
+
+-- Create BTX views
+CREATE OR REPLACE VIEW v_btx AS
+SELECT 
+  b.id,
+  b.created_at,
+  b.type as shipment_type,
+  b.control_no,
+  b.wave_no as wave_number,
+  b.tracking_no as tracking_number,
+  b.pallets,
+  b.cartons,
+  b.submitted_by,
+  'User' as user_display
+FROM btx b;
+
+CREATE OR REPLACE VIEW v_btx_summary AS
+SELECT 
+  id,
+  type as shipment_type,
+  control_no,
+  wave_no as wave_number,
+  tracking_no as tracking_number,
+  pallets,
+  cartons,
+  created_at,
+  'User' as user_display
+FROM btx;

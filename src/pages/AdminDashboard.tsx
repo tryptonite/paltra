@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { User } from '@/api/entities';
 import { LiveLoad } from '@/api/entities';
 import { Truckload } from '@/api/entities';
@@ -8,6 +8,7 @@ import { BTX } from '@/api/entities';
 import { CallIn } from '@/api/entities';
 import { Changeover } from '@/api/entities';
 import { LineCount } from '@/api/entities';
+import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import StatCard from '../components/admindashboard/StatCard';
@@ -39,12 +40,20 @@ const StatSkeleton = () => (
 
 export default function AdminDashboardPage() {
     const [user, setUser] = useState(null);
-    const [stats, setStats] = useState({});
+    const [stats, setStats] = useState<Record<string, {
+        count: number;
+        change: number;
+        totalRecords: number;
+        icon: React.ComponentType<any>; // Or a more specific icon type if available
+        url: string;
+    }>>({});
     const [isLoading, setIsLoading] = useState(true);
     const [recentActivity, setRecentActivity] = useState([]);
-    const [exportStartDate, setExportStartDate] = useState(null);
-    const [exportEndDate, setExportEndDate] = useState(null);
+    const [exportStartDate, setExportStartDate] = useState<Date | null>(null);
+    const [exportEndDate, setExportEndDate] = useState<Date | null>(null);
     const { toast } = useToast();
+
+    const endDateButtonRef = useRef<HTMLButtonElement>(null);
 
     useEffect(() => {
         const fetchUserAndData = async () => {
@@ -72,14 +81,14 @@ export default function AdminDashboardPage() {
 
                 const promises = entitiesToFetch.map(async ({ name, entity, icon, url }) => {
                     const records = await entity.list('-created_date', 100);
-                    const todayCount = records.filter(r => isAfter(new Date(r.created_date), todayStart)).length;
-                    const yesterdayCount = records.filter(r => 
+                    const todayCount: number = records.filter(r => isAfter(new Date(r.created_date), todayStart)).length;
+                    const yesterdayCount: number = records.filter(r => 
                         isAfter(new Date(r.created_date), yesterdayStart) && 
                         !isAfter(new Date(r.created_date), todayStart)
                     ).length;
                     
                     // Calculate percentage change
-                    let change = 0;
+                    let change: number = 0;
                     if (yesterdayCount > 0) {
                         change = Math.round(((todayCount - yesterdayCount) / yesterdayCount) * 100);
                     } else if (todayCount > 0) {
@@ -133,54 +142,9 @@ export default function AdminDashboardPage() {
     const exportToCSV = async () => {
         try {
             setIsLoading(true);
-            toast({ title: 'Exporting Data...', description: 'Please wait while we gather all records.' });
-            
-            // Fetch all data from all entities
-            const [liveLoads, truckloads, dimensions, btx, callIns, changeovers, lineCounts] = await Promise.all([
-                LiveLoad.list('-created_date'),
-                Truckload.list('-created_date'),
-                Dimension.list('-created_date'),
-                BTX.list('-created_date'),
-                CallIn.list('-created_date'),
-                Changeover.list('-created_date'),
-                LineCount.list('-created_date')
-            ]);
+            toast({ title: 'Exporting Data...', description: 'Please wait while we gather all records for the export.' });
 
-            // Filter data by date range if specified
-            const filterByDateRange = (records) => {
-                if (!exportStartDate && !exportEndDate) return records;
-                
-                return records.filter(record => {
-                    const recordDate = new Date(record.created_date); // Assuming created_date is parsable to Date object
-                    
-                    if (exportStartDate && isBefore(recordDate, exportStartDate)) {
-                        return false;
-                    }
-                    
-                    if (exportEndDate) {
-                        // To include records on the end date, set end of day
-                        const endOfDay = new Date(exportEndDate);
-                        endOfDay.setHours(23, 59, 59, 999);
-                        if (isAfter(recordDate, endOfDay)) {
-                            return false;
-                        }
-                    }
-                    
-                    return true;
-                });
-            };
-
-            // Apply date filtering
-            const filteredLiveLoads = filterByDateRange(liveLoads);
-            const filteredTruckloads = filterByDateRange(truckloads);
-            const filteredDimensions = filterByDateRange(dimensions);
-            const filteredBtx = filterByDateRange(btx);
-            const filteredCallIns = filterByDateRange(callIns);
-            const filteredChangeovers = filterByDateRange(changeovers);
-            const filteredLineCounts = filterByDateRange(lineCounts);
-
-            // Create CSV content
-            let csvContent = '';
+            let csvContent = '\uFEFF'; // UTF-8 BOM
 
             // Add date range info to header
             if (exportStartDate || exportEndDate) {
@@ -189,54 +153,161 @@ export default function AdminDashboardPage() {
                 csvContent += `EXPORT DATE RANGE: ${startDateStr} to ${endDateStr}\n\n`;
             }
 
-            // Live Loads Section
-            csvContent += 'LIVE LOADS\n';
-            csvContent += 'Date,User,Carrier,P&S Count,AVD Count,Raceway Pallets,Fitting Pallets,Cartons 95,Total Pallets,Total Cartons\n';
-            filteredLiveLoads.forEach(load => {
-                csvContent += `${formatInEST(load.created_date)},${load.created_by.split('@')[0]},${load.carrier || ''},${load.ps_count || 0},${load.avd_count || 0},${load.raceway_pallets || 0},${load.fitting_pallets || 0},${load.cartons_95 || 0},${load.total_pallets || 0},${load.total_cartons || 0}\n`;
-            });
+            const fetchDataAndAppendToCsv = async (tableName: string, csvHeaders: string, dataMapper: (data: any) => string, dateColumn: 'created_at' | 'submitted_at' = 'created_at') => {
+                let query = supabase.from(tableName).select('*');
+                if (exportStartDate) query = query.gte(dateColumn, exportStartDate.toISOString());
+                if (exportEndDate) {
+                    const endOfDay = new Date(exportEndDate);
+                    endOfDay.setHours(23, 59, 59, 999);
+                    query = query.lte(dateColumn, endOfDay.toISOString());
+                }
+                query = query.order(dateColumn, { ascending: true });
 
-            // Truckloads Section
-            csvContent += '\nTRUCKLOADS\n';
-            csvContent += 'Date,User,Pickup Date,Department,Ship Via,Control Numbers,Wave Number,PO Numbers,Company Name,Destination City,Destination State,Total Pieces,Weight,Completed\n';
-            filteredTruckloads.forEach(truck => {
-                csvContent += `${formatInEST(truck.created_date)},${truck.created_by.split('@')[0]},${formatDate(truck.pickup_date)},${truck.department || ''},${truck.ship_via || ''},"${(truck.control_numbers || []).join('; ')}",${truck.wave_number || ''},"${(truck.po_numbers || []).join('; ')}",${truck.company_name || ''},${truck.destination_city || ''},${truck.destination_state || ''},${truck.total_pieces || 0},${truck.weight || 0},${truck.completed ? 'Yes' : 'No'}\n`;
-            });
+                const { data, error } = await query;
+                if (error) {
+                    console.error(`Error fetching ${tableName}:`, error);
+                    csvContent += `\nERROR FETCHING ${tableName.toUpperCase()}: ${error.message}\n`;
+                    return;
+                }
+                if (!data || data.length === 0) {
+                    csvContent += `\n${tableName.toUpperCase()}\nNo data found for this period.\n\n`;
+                    return;
+                }
 
-            // Dimensions Section
-            csvContent += '\nDIMENSIONS\n';
-            csvContent += 'Date,User,Ship Via,Control Number,Wave Number,Skids Count,Cartons Count\n';
-            filteredDimensions.forEach(dim => {
-                csvContent += `${formatInEST(dim.created_date)},${dim.created_by.split('@')[0]},${dim.ship_via || ''},${dim.control_number || ''},${dim.wave_number || ''},${(dim.skids || []).length},${(dim.cartons || []).length}\n`;
-            });
+                csvContent += `\n${tableName.toUpperCase()}\n`;
+                csvContent += `${csvHeaders}\n`;
+                data.forEach(item => {
+                    csvContent += `${dataMapper(item)}\n`;
+                });
+            };
 
-            // BTX Section
-            csvContent += '\nBTX SHIPMENTS\n';
-            csvContent += 'Date,User,Shipment Type,Control Number,Wave Number,Tracking Number,Pallets Count,Cartons Count\n';
-            filteredBtx.forEach(item => {
-                csvContent += `${formatInEST(item.created_date)},${item.created_by.split('@')[0]},${item.shipment_type || ''},${item.control_number || ''},${item.wave_number || ''},${item.tracking_number || ''},${(item.pallets || []).length},${(item.cartons || []).length}\n`;
-            });
+            // Live Loads
+            await fetchDataAndAppendToCsv('liveloads',
+                'Date,User,Carrier,P&S Count,AVD Count,Raceway Pallets,Fitting Pallets,Cartons 95,Total Pallets,Total Cartons',
+                (load) => [
+                    formatInEST(load.submitted_at || load.created_at), // Prefer submitted_at, fallback to created_at
+                    load.created_by ? load.created_by.split('@')[0] : '',
+                    load.carrier || '',
+                    load.ps_count || 0,
+                    load.avd_count || 0,
+                    load.raceway_pallets || 0,
+                    load.fitting_pallets || 0,
+                    load.cartons_95 || 0,
+                    load.total_pallets || 0,
+                    load.total_cartons || 0
+                ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','),
+                'submitted_at' // Use submitted_at for filtering
+            );
 
-            // Call-Ins Section
-            csvContent += '\nCALL-INS\n';
-            csvContent += 'Date,User,Dock Door,Carrier,Trailer Number,Ready Time\n';
-            filteredCallIns.forEach(call => {
-                csvContent += `${formatInEST(call.created_date)},${call.created_by.split('@')[0]},${call.dock_door || ''},${call.carrier || ''},${call.trailer_number || ''},${formatInEST(call.ready_time)}\n`;
-            });
+            // Call-Ins
+            await fetchDataAndAppendToCsv('callins',
+                'Date,User,Dock Door,Carrier,Trailer Number,Ready Time,Status',
+                (call) => [
+                    formatInEST(call.submitted_at || call.created_at), // Prefer submitted_at, fallback to created_at
+                    call.created_by ? call.created_by.split('@')[0] : '',
+                    call.dock_door || '',
+                    call.carrier || '',
+                    call.trailer_number || '',
+                    call.ready_time ? formatInEST(call.ready_time) : '',
+                    call.status || ''
+                ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','),
+                'submitted_at' // Use submitted_at for filtering
+            );
 
-            // Changeovers Section
-            csvContent += '\nCHANGEOVERS\n';
-            csvContent += 'Date,User,Department,Original Ship Via,New Ship Via,Control Number,Wave Number,Pallets,Cartons,SO Number,Delivery Number,Reason\n';
-            filteredChangeovers.forEach(change => {
-                csvContent += `${formatInEST(change.created_date)},${change.created_by.split('@')[0]},${change.department || ''},${change.original_ship_via || ''},${change.new_ship_via || ''},${change.control_number || ''},${change.wave_number || ''},${change.pallets || 0},${change.cartons || 0},${change.so_number || ''},${change.delivery_number || ''},"${(change.reason_for_change || '').replace(/"/g, '""')}"\n`;
-            });
+            // Dimensions
+            await fetchDataAndAppendToCsv('dimensions',
+                'Date,User,Ship Via,Control Number,Wave Number,Skids Count,Cartons Count,Length (in),Width (in),Height (in),Qty,Volume (in3)',
+                (dim) => [
+                    formatInEST(dim.created_at),
+                    dim.created_by ? dim.created_by.split('@')[0] : '',
+                    dim.ship_via || '',
+                    dim.control_number || '',
+                    dim.wave_number || '',
+                    dim.skids ? dim.skids.length : 0,
+                    dim.cartons ? dim.cartons.length : 0,
+                    dim.length_in || '',
+                    dim.width_in || '',
+                    dim.height_in || '',
+                    dim.qty || '',
+                    dim.volume_in3 || ''
+                ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')
+            );
 
-            // Line Counts Section
-            csvContent += '\nLINE COUNTS\n';
-            csvContent += 'Date of Count,Time Period,User,Preferreds,Parcels,LTL,Total\n';
-            filteredLineCounts.forEach(count => {
-                csvContent += `${formatDate(count.date)},${count.time_period || ''},${count.created_by.split('@')[0]},${count.preferreds || 0},${count.parcels || 0},${count.ltl || 0},${count.total || 0}\n`;
-            });
+            // Changeovers
+            await fetchDataAndAppendToCsv('changeovers',
+                'Date,User,Department,Original Ship Via,New Ship Via,Control Number,Wave Number,Pallets,Cartons,SO Number,Delivery Number,Reason',
+                (change) => [
+                    formatInEST(change.created_at),
+                    change.created_by ? change.created_by.split('@')[0] : '',
+                    change.department || '',
+                    change.original_ship_via || '',
+                    change.new_ship_via || '',
+                    change.control_number || '',
+                    change.wave_number || '',
+                    change.pallets || 0,
+                    change.cartons || 0,
+                    change.so_number || '',
+                    change.delivery_number || '',
+                    change.reason_for_change || ''
+                ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')
+            );
+
+            // BTX
+            await fetchDataAndAppendToCsv('btx',
+                'Date,User,Shipment Type,Control Number,Wave Number,Tracking Number,Pallets Count,Cartons Count,Length (in),Width (in),Height (in),Qty,Volume (in3),Submission ID',
+                (item) => [
+                    formatInEST(item.created_at),
+                    item.user_display || (item.created_by ? item.created_by.split('@')[0] : ''),
+                    item.type || '',
+                    item.control_no || '',
+                    item.wave_no || '',
+                    item.tracking_number || '',
+                    item.pallets ? item.pallets.length : 0,
+                    item.cartons ? item.cartons.length : 0,
+                    item.length_in || '',
+                    item.width_in || '',
+                    item.height_in || '',
+                    item.qty || '',
+                    item.volume_in3 || '',
+                    item.submission_id || ''
+                ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')
+            );
+
+            // Truckloads
+            await fetchDataAndAppendToCsv('truckloads',
+                'Date,User,Pickup Date,Department,Ship Via,Control Numbers,Wave Number,PO Numbers,Company Name,Destination City,Destination State,Total Pieces,Weight,Completed',
+                (truck) => [
+                    formatInEST(truck.created_at),
+                    truck.created_by ? truck.created_by.split('@')[0] : '',
+                    truck.pickup_date ? formatDate(truck.pickup_date) : '',
+                    truck.department || '',
+                    truck.ship_via || '',
+                    truck.control_numbers ? (Array.isArray(truck.control_numbers) ? truck.control_numbers.join('; ') : truck.control_numbers) : '',
+                    truck.wave_number || '',
+                    truck.po_numbers ? (Array.isArray(truck.po_numbers) ? truck.po_numbers.join('; ') : truck.po_numbers) : '',
+                    truck.company_name || '',
+                    truck.destination_city || '',
+                    truck.destination_state || '',
+                    truck.total_pieces || 0,
+                    truck.weight || 0,
+                    truck.completed ? 'Yes' : 'No'
+                ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')
+            );
+
+            // Line Counts
+            await fetchDataAndAppendToCsv('line_counts',
+                'Date of Count,Time Period,User,Preferreds,Parcels,LTL,Total',
+                (count) => [
+                    count.date ? formatDate(count.date) : '', // 'date' is the actual date of count, not submission date
+                    count.time_period || '',
+                    count.submitted_by ? count.submitted_by.split('@')[0] : '',
+                    count.preferreds || 0,
+                    count.parcels || 0,
+                    count.ltl || 0,
+                    count.total || 0
+                ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','),
+                'submitted_at' // Use submitted_at for filtering
+            );
 
             // Create and download file
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -299,6 +370,7 @@ export default function AdminDashboardPage() {
                     <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 w-full sm:w-auto">
                         <Popover>
                             <PopoverTrigger asChild>
+                                {/* @ts-ignore - Button as child of PopoverTrigger might not be fully typed */}
                                 <Button 
                                     variant="outline" 
                                     className={`justify-start text-left font-normal w-full sm:w-[180px] ${!exportStartDate ? 'text-muted-foreground' : ''}`}
@@ -308,10 +380,15 @@ export default function AdminDashboardPage() {
                                 </Button>
                             </PopoverTrigger>
                             <PopoverContent className="w-auto p-0">
+                                {/* @ts-ignore - Calendar component props might not be fully typed */}
                                 <Calendar
                                     mode="single"
                                     selected={exportStartDate}
-                                    onSelect={setExportStartDate}
+                                    onSelect={(date) => {
+                                        setExportStartDate(date);
+                                        // Automatically focus the end date button after a start date is selected
+                                        setTimeout(() => endDateButtonRef.current?.click(), 0);
+                                    }}
                                     initialFocus
                                     disabled={(date) => isAfter(date, new Date())}
                                 />
@@ -321,7 +398,9 @@ export default function AdminDashboardPage() {
                         <span className="text-slate-500 sm:self-center">to</span>
                         
                         <Popover>
-                            <PopoverTrigger asChild>
+                            {/* @ts-ignore - PopoverTrigger ref prop might not be fully typed */}
+                            <PopoverTrigger asChild ref={endDateButtonRef}>
+                                {/* @ts-ignore - Button as child of PopoverTrigger might not be fully typed */}
                                 <Button 
                                     variant="outline" 
                                     className={`justify-start text-left font-normal w-full sm:w-[180px] ${!exportEndDate ? 'text-muted-foreground' : ''}`}
@@ -331,6 +410,7 @@ export default function AdminDashboardPage() {
                                 </Button>
                             </PopoverTrigger>
                             <PopoverContent className="w-auto p-0">
+                                {/* @ts-ignore - Calendar component props might not be fully typed */}
                                 <Calendar
                                     mode="single"
                                     selected={exportEndDate}

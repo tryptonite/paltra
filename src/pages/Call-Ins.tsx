@@ -350,9 +350,9 @@ export default function CallInsPage() {
                 <TableHead className="text-slate-600 font-medium w-32">Submitted Date & Time</TableHead>
                 <TableHead className="text-slate-600 font-medium w-20">User</TableHead>
                 <TableHead className="text-slate-600 font-medium w-20">Carrier</TableHead>
-                <TableHead className="text-slate-600 font-medium w-20">Ready Time</TableHead>
                 <TableHead className="text-slate-600 font-medium w-20">Trailer #</TableHead>
-                <TableHead className="text-slate-600 font-medium w-16">Dock</TableHead>
+                <TableHead className="text-slate-600 font-medium w-20">Ready Time</TableHead>
+                <TableHead className="text-slate-600 font-medium w-16">Dock Door</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -363,8 +363,8 @@ export default function CallInsPage() {
                   <TableCell className="text-sm text-slate-600">{formatInEST(record.submitted_at, { dateStyle: 'short', timeStyle: 'short' })}</TableCell>
                   <TableCell className="text-sm text-slate-700">{(record.profile as any)?.full_name || 'N/A'}</TableCell>
                   <TableCell className="font-medium text-slate-800">{record.carrier}</TableCell>
-                  <TableCell className="text-sm text-slate-600 font-medium">{record.ready_time.substring(0, 5)}</TableCell>
                   <TableCell className="text-slate-700">{record.trailer_no}</TableCell>
+                  <TableCell className="text-sm text-slate-600 font-medium">{record.ready_time.substring(0, 5)}</TableCell>
                   <TableCell className="text-slate-700">{record.dock || 'N/A'}</TableCell>
                 </TableRow>
               ))}

@@ -19,7 +19,6 @@ import { Toaster } from '@/components/ui/toaster';
 
 const navigationItems = [
   { title: 'Admin Dashboard', url: createPageUrl('AdminDashboard'), icon: LayoutDashboard, adminOnly: true },
-  { title: 'User Approval', url: createPageUrl('UserApproval'), icon: UserIcon, adminOnly: true },
   { title: 'Dock Doors', url: createPageUrl('DockDoors'), icon: Warehouse, adminOnly: false },
   { title: 'Live Loads', url: createPageUrl('LiveLoads'), icon: Truck, adminOnly: false },
   { title: 'Call-Ins', url: createPageUrl('Call-Ins'), icon: Phone, adminOnly: false },
@@ -41,9 +40,11 @@ const NavSkeleton = () => (
 
 const PaltraLogo = () => (
   <div className="flex items-center gap-3">
-    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-teal-500 grid place-items-center text-white font-bold">
-      P
-    </div>
+    <img 
+      src="/logos/paltralogotp.png" 
+      alt="Paltra Logo" 
+      className="w-auto h-16"
+    />
     <div className="flex flex-col">
       <span className="text-2xl font-bold text-white tracking-tight">Paltra</span>
       <span className="text-xs text-blue-200 -mt-1 font-medium">Your warehouse. Streamlined.</span>
@@ -57,24 +58,30 @@ const HeaderLogo = () => (
     </Link>
 );
 
-const NavLink = ({ item, pathname, isMobile = false }) => {
+const NavLink = React.memo(({ item, pathname, isMobile = false }: { 
+  item: { title: string; url: string; icon: any; adminOnly: boolean }; 
+  pathname: string; 
+  isMobile?: boolean; 
+}) => {
   const isActive = pathname === item.url;
+  
+  // Pre-compute class names to avoid repeated string operations
+  const activeClasses = 'bg-gradient-to-r from-blue-600 to-teal-600 text-white shadow-lg';
+  const inactiveClasses = isMobile 
+    ? 'text-slate-300 hover:bg-slate-700/50 hover:text-white' 
+    : 'text-slate-300 hover:bg-slate-700/50 hover:text-white';
+  const sizeClasses = isMobile ? 'text-base' : 'text-sm font-medium';
+  
   return (
     <Link
       to={item.url}
-      className={`group flex items-center gap-3 rounded-xl px-4 py-3 transition-all duration-200 ${
-        isActive
-          ? 'bg-gradient-to-r from-blue-600 to-teal-600 text-white shadow-lg'
-          : isMobile
-            ? 'text-slate-300 hover:bg-slate-700/50 hover:text-white'
-            : 'text-slate-300 hover:bg-slate-700/50 hover:text-white'
-      } ${isMobile ? 'text-base' : 'text-sm font-medium'}`}
+      className={`group flex items-center gap-3 rounded-xl px-4 py-3 transition-all duration-200 ${isActive ? activeClasses : inactiveClasses} ${sizeClasses}`}
     >
       <item.icon className={`h-5 w-5 transition-transform duration-200 ${isActive ? '' : 'group-hover:scale-110'}`} />
       {item.title}
     </Link>
   );
-};
+});
 
 export default function Layout({ children, currentPageName }) {
   const location = useLocation();

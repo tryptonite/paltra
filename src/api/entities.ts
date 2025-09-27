@@ -568,7 +568,7 @@ export const Changeover = {
       const resp: any = await withTimeout(
         supabase
           .from('v_changeovers')
-          .select('id,created_at,department,user_display,original_ship_via,new_ship_via,control_no,wave_no,pallets,cartons,so_no,delivery_no')
+          .select('id,created_at,department,user_display,original_ship_via,new_ship_via,control_no,wave_no,pallets,cartons,so_no,delivery_no,reason_for_change')
           .order('created_at', { ascending: false })
           .limit(300) as any,
         2500
@@ -602,7 +602,7 @@ export const Changeover = {
 
       let query = supabase
         .from('v_changeovers')
-        .select('id,created_at,department,user_display,original_ship_via,new_ship_via,control_no,wave_no,pallets,cartons,so_no,delivery_no')
+        .select('id,created_at,department,user_display,original_ship_via,new_ship_via,control_no,wave_no,pallets,cartons,so_no,delivery_no,reason_for_change')
 
       if (criteria.department) {
         query = query.eq('department', criteria.department)
@@ -648,6 +648,7 @@ export const Changeover = {
         cartons: payload.cartons,
         so_no: payload.so_no || payload.so_number,
         delivery_no: payload.delivery_no || payload.delivery_number,
+        reason_for_change: payload.reason_for_change || null,
         submitted_by: user.id
       }
 

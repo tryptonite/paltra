@@ -13,7 +13,7 @@ This folder contains static assets that are served directly by Vite.
 ### In React Components
 ```tsx
 // Import images
-import logo from '/logos/paltra-logo.png'
+import logo from '/logos/paltralogotp.png'
 import heroImage from '/images/hero-bg.jpg'
 
 // Use in JSX
@@ -28,7 +28,7 @@ import heroImage from '/images/hero-bg.jpg'
 }
 
 .logo {
-  background-image: url('/logos/paltra-logo.png');
+  background-image: url('/logos/paltralogotp.png');
 }
 ```
 

@@ -42,11 +42,10 @@ export default function AuthPage() {
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
           <img 
-            src="/logos/paltra-logo.svg" 
+            src="/logos/paltralogotp.png" 
             alt="Paltra Logo" 
-            className="w-16 h-16 mb-4"
+            className="w-auto h-28 -mb-6"
           />
-          <h1 className="text-2xl font-bold text-gray-900">PALTRA</h1>
         </div>
 
         {/* Welcome Text */}
@@ -120,15 +119,17 @@ export default function AuthPage() {
         </form>
 
         {/* Links */}
-        <div className="mt-8 text-center text-sm">
+      {/*  <div className="mt-8 text-center text-sm">
           <button className="text-gray-600 hover:text-gray-800 transition-colors">
             Forgot password?
           </button>
-        </div>
+        </div>*/}
         
         {/* Owner Contact Info */}
         <div className="mt-6 text-center text-xs text-gray-500">
-          <p>Need an account? Contact your administrator.</p>
+          <p>Forgot your password?</p> 
+          <p>Need an Account?</p>
+          <p>Contact your administrator.</p>
         </div>
       </div>
     </div>

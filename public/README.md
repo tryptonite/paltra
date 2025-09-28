@@ -34,7 +34,7 @@ import heroImage from '/images/hero-bg.jpg'
 
 ### Direct URL Access
 Files in this folder are accessible directly via URL:
-- `http://localhost:3000/logos/paltra-logo.png`
+- `http://localhost:3000/logos/paltralogotp.png`
 - `http://localhost:3000/images/hero-bg.jpg`
 
 ## File Naming Conventions

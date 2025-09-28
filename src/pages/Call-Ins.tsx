@@ -141,7 +141,7 @@ export default function CallInsPage() {
     const data = {
       dock_door: dockDoor, 
       carrier, 
-      trailer_number: trailerNumber, 
+      trailer: trailerNumber, 
       ready_time: readyDateTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
       display_ready_time: readyDateTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) 
     };
@@ -181,7 +181,7 @@ export default function CallInsPage() {
         const payload = {
           carrier: confirmData.carrier,
           ready_time: formattedReadyTime,
-          trailer_no: confirmData.trailer_number,
+          trailer_no: confirmData.trailer,
           dock: confirmData.dock_door ? Number(confirmData.dock_door) : 0,
         };
 
@@ -382,7 +382,7 @@ export default function CallInsPage() {
             {confirmData && (
                 <div className="space-y-2 py-4 text-sm">
                     <div className="flex justify-between"><span>Carrier:</span><span>{confirmData.carrier}</span></div>
-                    <div className="flex justify-between"><span>Trailer #:</span><span>{confirmData.trailer_number}</span></div>
+                    <div className="flex justify-between"><span>Trailer #:</span><span>{confirmData.trailer}</span></div>
                     <div className="flex justify-between"><span>Ready Time:</span><span>{confirmData.display_ready_time}</span></div>
                     <div className="flex justify-between"><span>Dock Door:</span><span>{confirmData.dock_door || 'N/A'}</span></div>
                 </div>

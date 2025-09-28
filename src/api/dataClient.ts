@@ -86,7 +86,7 @@ const createDoorRecords = (): BaseRecord[] => {
     door_number: door,
     status: 'Available',
     carrier: '',
-    trailer_number: '',
+    trailer: '',
     created_date: timestamp,
     updated_date: timestamp,
     created_by: 'system@paltra.local',

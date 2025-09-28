@@ -17,7 +17,7 @@ const statusBorders = {
 };
 
 export default function DockDoorCard({ door, onSelect }) {
-  const isCompact = door.status === 'Available' && !door.carrier && !door.trailer_number;
+  const isCompact = door.status === 'Available' && !door.carrier && !door.trailer;
 
   // Compact View for available, empty doors
   if (isCompact) {
@@ -61,7 +61,7 @@ export default function DockDoorCard({ door, onSelect }) {
             </div>
             <div className="flex items-center gap-2 min-w-0">
               <Hash className="h-4 w-4 text-slate-500 flex-shrink-0" />
-              <span className="text-slate-700 font-medium truncate">{door.trailer_number || 'N/A'}</span>
+              <span className="text-slate-700 font-medium truncate">{door.trailer || 'N/A'}</span>
             </div>
         </div>
       </CardContent>

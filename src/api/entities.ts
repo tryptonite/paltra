@@ -3,7 +3,7 @@ import { Dimensions, Profiles, BTXEntries, LiveLoads, CallIns, Truckloads, DockD
 import { supabase } from '@/lib/supabase'
 
 // Check if Supabase is properly configured
-const isSupabaseConfigured = () => {
+export const isSupabaseConfigured = () => {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
   const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
   return supabaseUrl && supabaseKey && 
@@ -527,7 +527,7 @@ export const CallIn = {
       }
     } catch (error) {
       console.error('Error updating call-in in Supabase, falling back to local data:', error)
-    return await dataClient.entities.CallIn.update(id, updates)
+      return await dataClient.entities.CallIn.update(id, updates)
     }
   },
 
@@ -546,7 +546,7 @@ export const CallIn = {
       if (error) throw error
     } catch (error) {
       console.error('Error deleting call-in in Supabase, falling back to local data:', error)
-    return await dataClient.entities.CallIn.delete(id)
+      return await dataClient.entities.CallIn.delete(id)
     }
   },
 
@@ -1205,6 +1205,216 @@ export const Truckload = {
   }
 }
 
+// Create DockDoor entity that reads from dock_doors table
+export const DockDoor = {
+  // Helper method to map database status to UI status
+  mapStatusToUI(dbStatus: string): string {
+    const statusMap = {
+      'available': 'Available',
+      'loading': 'Loading',
+      'out_of_service': 'Out-of-service'
+    };
+    return statusMap[dbStatus as keyof typeof statusMap] || dbStatus;
+  },
+
+  // Helper method to map UI status to database status
+  mapStatusToDB(uiStatus: string): string {
+    const statusMap = {
+      'Available': 'available',
+      'Loading': 'loading',
+      'Out-of-service': 'out_of-service'
+    };
+    return statusMap[uiStatus as keyof typeof statusMap] || uiStatus;
+  },
+
+  async list(orderBy?: string, limit?: number) {
+    try {
+      if (!isSupabaseConfigured()) {
+        console.warn('Supabase not configured, falling back to local dataClient')
+        return await dataClient.entities.DockDoor.list(orderBy, limit)
+      }
+
+      // Use the exact Supabase query pattern provided by the user
+      const { data, error } = await supabase
+        .from('dock_doors')
+        .select('id, door_number, label, status, carrier, trailer, created_at, updated_at')
+        .order('door_number', { ascending: true });
+      
+      if (error) console.error(error);
+      if (error) throw error
+      
+      const dockDoorsData = data || []
+      
+      return dockDoorsData.map((record: any) => ({
+        ...record,
+        door_number: record.door_number,
+        status: this.mapStatusToUI(record.status),
+        carrier: record.carrier, // Use carrier directly for UI compatibility
+        trailer: record.trailer, // Use trailer directly for UI compatibility
+        created_date: record.created_at,
+        updated_date: record.updated_at,
+        created_by: 'System', // Placeholder since dock_doors doesn't track user
+      }))
+    } catch (error) {
+      console.warn('DockDoor.list falling back due to error/timeout:', error)
+      return await dataClient.entities.DockDoor.list(orderBy, limit)
+    }
+  },
+
+  async filter(criteria: any) {
+    try {
+      if (!isSupabaseConfigured()) {
+        console.warn('Supabase not configured, falling back to local dataClient')
+        return await dataClient.entities.DockDoor.filter(criteria)
+      }
+
+      let query = supabase
+        .from('dock_doors')
+        .select('id, door_number, label, status, carrier, trailer, created_at, updated_at') // Correct: using trailer field
+
+      // Apply filters - map UI status to DB status
+      if (criteria.status) {
+        query = query.eq('status', this.mapStatusToDB(criteria.status))
+      }
+      if (criteria.door_number) {
+        query = query.eq('door_number', criteria.door_number)
+      }
+      if (criteria.carrier_code) {
+        query = query.eq('carrier', criteria.carrier_code) // Map carrier_code to carrier for DB query
+      }
+
+      const resp: any = await withTimeout(query.order('door_number', { ascending: true }) as any, 2500)
+      const { data: dockDoorsData, error } = resp
+      if (error) throw error
+      
+      return (dockDoorsData || []).map((record: any) => ({
+        ...record,
+        door_number: record.door_number,
+        status: this.mapStatusToUI(record.status),
+        carrier: record.carrier, // Use carrier directly for UI compatibility
+        trailer: record.trailer, // Use trailer directly for UI compatibility
+        created_date: record.updated_at,
+        updated_date: record.updated_at,
+        created_by: 'System',
+        user_role: 'user',
+        user_department: 'operations'
+      }))
+    } catch (error) {
+      console.warn('DockDoor.filter falling back due to error/timeout:', error)
+      return await dataClient.entities.DockDoor.filter(criteria)
+    }
+  },
+
+  async create(payload: any) {
+    try {
+      if (!isSupabaseConfigured()) {
+        console.warn('Supabase not configured, falling back to local dataClient');
+        return await dataClient.entities.DockDoor.create(payload);
+      }
+
+      const dbStatus = this.mapStatusToDB(payload.status || 'Available');
+      const dbPayload =
+        dbStatus === 'loading'
+          ? {
+              door_number: payload.door_number,
+              label: payload.label ?? null,
+              status: dbStatus,
+              carrier: payload.carrier ?? payload.carrier_code ?? null,
+              trailer: payload.trailer ?? payload.trailer_number ?? null,
+            }
+          : {
+              door_number: payload.door_number,
+              label: payload.label ?? null,
+              status: dbStatus,
+              carrier: null,
+              trailer: null,
+            };
+
+      const { data, error } = await supabase
+        .from('dock_doors')
+        .insert(dbPayload)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return { ...data, carrier: data.carrier, trailer: data.trailer };
+    } catch (error) {
+      console.error('Error creating dock door in Supabase, falling back to local data:', error);
+      return await dataClient.entities.DockDoor.create(payload);
+    }
+  },
+
+  async update(id: string | number, updates: any) {
+    try {
+      if (!isSupabaseConfigured()) {
+        return await dataClient.entities.DockDoor.update(id as any, updates);
+      }
+
+      const dbStatus = this.mapStatusToDB(updates.status); // 'available' | 'loading' | 'out_of_service'
+
+      // accept both naming styles (carrier / carrier_code, trailer / trailer_number)
+      const norm = (v: any) => {
+        if (v === undefined || v === null) return null;
+        const s = String(v).trim();
+        return s === '' ? null : s;
+      };
+      const carrierVal = norm(updates.carrier ?? updates.carrier_code);
+      const trailerVal = norm(updates.trailer ?? updates.trailer_number);
+
+      const patch =
+        dbStatus === 'loading'
+          ? { status: dbStatus, carrier: carrierVal, trailer: trailerVal }
+          : { status: dbStatus, carrier: null, trailer: null };
+
+      const { data, error } = await supabase
+        .from('dock_doors')
+        .update(patch)
+        .eq('id', Number(id))              // or .eq('door_number', Number(id))
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      return {
+        ...data,
+        status: this.mapStatusToUI(data.status),
+        carrier: data.carrier,
+        trailer: data.trailer,
+         created_date: data.created_at,
+        updated_date: data.updated_at,
+        created_by: 'System',
+        user_role: 'user',
+      };
+    } catch (err) {
+      console.error('DockDoor.update error:', err);
+      return await dataClient.entities.DockDoor.update(id as any, updates);
+    }
+  },
+
+  async delete(id: string) {
+    try {
+      if (!isSupabaseConfigured()) {
+        console.warn('Supabase not configured, falling back to local dataClient')
+        return await dataClient.entities.DockDoor.delete(id)
+      }
+
+      const { error } = await supabase
+        .from('dock_doors')
+        .delete()
+        .eq('id', id)
+
+      if (error) throw error
+    } catch (error) {
+      console.error('Error deleting dock door in Supabase, falling back to local data:', error)
+      return await dataClient.entities.DockDoor.delete(id)
+    }
+  }
+}
+
+// Attach the DockDoor entity to window so it can be called from DevTools
+// @ts-ignore
+if (typeof window !== 'undefined') (window as any).DockDoor = DockDoor;
+console.log('[DockDoor] entity loaded');
+
 // Keep the other entities using the local dataClient for now
 export const LiveLoad = dataClient.entities.LiveLoad
-export const DockDoor = dataClient.entities.DockDoor

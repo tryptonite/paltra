@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS dock_doors (
   door_number TEXT UNIQUE NOT NULL,
   status TEXT NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'occupied', 'maintenance')),
   carrier TEXT,
-  trailer_number TEXT,
+  trailer TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 

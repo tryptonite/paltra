@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { isSupabaseConfigured } from '@/api/entities';
 
 const CARRIERS = ['AAA', 'ABF', 'AVR', 'CEN', 'ESTES', 'FEF', 'FDXG', 'OLD', 'R&L', 'SAIA', 'SEF', 'T-FORCE', 'UPSG', 'WARD', 'XPO', 'OTHER'];
 
@@ -12,6 +13,7 @@ export default function AssignDockDoorDialog({ open, onOpenChange, door, onSave 
   const [carrier, setCarrier] = useState('');
   const [customCarrier, setCustomCarrier] = useState('');
   const [trailerNumber, setTrailerNumber] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (door) {
@@ -27,7 +29,7 @@ export default function AssignDockDoorDialog({ open, onOpenChange, door, onSave 
         setCarrier('');
         setCustomCarrier('');
       }
-      setTrailerNumber(door.trailer_number || '');
+      setTrailerNumber(door.trailer || '');
     }
   }, [door]);
 
@@ -39,38 +41,74 @@ export default function AssignDockDoorDialog({ open, onOpenChange, door, onSave 
     }
   }, [carrier, customCarrier, trailerNumber, status]);
 
-  const handleSave = () => {
-    const effectiveCarrier = carrier === 'OTHER' ? customCarrier.toUpperCase() : carrier;
+  const handleSave = async () => {
+    console.log('[UI] Save clicked for door:', door?.door_number);
     
-    let dataToSave = {
-      status: status,
-      carrier: effectiveCarrier,
-      trailer_number: trailerNumber.toUpperCase(),
-    };
+    // Add debugging for Supabase configuration
+    console.log('isSupabaseConfigured:', isSupabaseConfigured());
+    console.log('SUPABASE_URL', import.meta.env.VITE_SUPABASE_URL);
+    
+    try {
+      setIsSaving(true);
+      const effectiveCarrier = carrier === 'OTHER' ? customCarrier.toUpperCase() : carrier;
+      
+      let dataToSave = {
+        status: status,
+        carrier: effectiveCarrier,
+        trailer: trailerNumber.toUpperCase(),
+      };
 
-    // Don't clear data when changing status - only clear when explicitly setting to Available/Out-of-service without data
-    if (status === 'Available' && !effectiveCarrier && !trailerNumber) {
-      dataToSave.carrier = '';
-      dataToSave.trailer_number = '';
-    } else if (status === 'Out-of-service') {
-      // Keep existing data even when out of service
+      // Don't clear data when changing status - only clear when explicitly setting to Available/Out-of-service without data
+      if (status === 'Available' && !effectiveCarrier && !trailerNumber) {
+        dataToSave.carrier = '';
+        dataToSave.trailer = '';
+      } else if (status === 'Out-of-service') {
+        // Keep existing data even when out of service
+      }
+      
+      console.log('[UI] Calling onSave with:', { id: door.id, data: dataToSave });
+      const res = await onSave(door.id, dataToSave);
+      console.log('[UI] Update success:', res);
+      
+      // Close dialog on successful save
+      onOpenChange(false);
+    } catch (e) {
+      console.error('[UI] Update failed:', e);
+      // Optionally show error message to user
+    } finally {
+      setIsSaving(false);
     }
-    
-    onSave(door.id, dataToSave);
   };
 
-  const handleClear = () => {
-    setStatus('Available');
-    setCarrier('');
-    setCustomCarrier('');
-    setTrailerNumber('');
+  const handleClear = async () => {
+    console.log('[UI] Clear clicked for door:', door?.door_number);
     
-    // Immediately save the cleared state
-    onSave(door.id, {
-      status: 'Available',
-      carrier: '',
-      trailer_number: '',
-    });
+    try {
+      setIsSaving(true);
+      
+      setStatus('Available');
+      setCarrier('');
+      setCustomCarrier('');
+      setTrailerNumber('');
+      
+      const clearData = {
+        status: 'Available',
+        carrier: '',
+        trailer: ''
+      };
+      
+      console.log('[UI] Calling onSave with clear data:', { id: door.id, data: clearData });
+      const res = await onSave(door.id, clearData);
+      console.log('[UI] Clear success:', res);
+      
+      // Close dialog on successful clear
+      onOpenChange(false);
+    } catch (e) {
+      console.error('[UI] Clear failed:', e);
+      // Optionally show error message to user
+    } finally {
+      setIsSaving(false);
+    }
   };
   
   const isDataEntryDisabled = status === 'Out-of-service';
@@ -139,12 +177,14 @@ export default function AssignDockDoorDialog({ open, onOpenChange, door, onSave 
           </div>
         </div>
         <DialogFooter className="flex justify-between">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>Cancel</Button>
           <div className="flex gap-2">
-            <Button variant="destructive" onClick={handleClear}>
-              Clear & Reset
+            <Button variant="destructive" onClick={handleClear} disabled={isSaving}>
+              {isSaving ? 'Clearing...' : 'Clear & Reset'}
             </Button>
-            <Button onClick={handleSave}>Save Changes</Button>
+            <Button onClick={handleSave} disabled={isSaving}>
+              {isSaving ? 'Saving...' : 'Save Changes'}
+            </Button>
           </div>
         </DialogFooter>
       </DialogContent>

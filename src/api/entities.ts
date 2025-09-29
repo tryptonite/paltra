@@ -1470,5 +1470,44 @@ export const DockDoor = {
 if (typeof window !== 'undefined') (window as any).DockDoor = DockDoor;
 console.log('[DockDoor] entity loaded');
 
-// Keep the other entities using the local dataClient for now
-export const LiveLoad = dataClient.entities.LiveLoad
+// LiveLoad entity with Supabase join for user display
+export const LiveLoad = {
+  async list(orderBy?: string, limit?: number) {
+    try {
+      if (!isSupabaseConfigured()) {
+        console.warn('Supabase not configured, falling back to local dataClient')
+        return await dataClient.entities.LiveLoad.list(orderBy, limit)
+      }
+
+      const resp: any = await withTimeout(
+        supabase
+          .from('liveloads')
+          .select('id,carrier,ps_count,avd_count,raceway_pallets,fitting_pallets,cartons_95,total_pallets,total_cartons,created_time,submitted_by,profile:profiles(full_name)')
+          .order('created_time', { ascending: false })
+          .limit(limit || 300) as any,
+        2500
+      )
+      const { data, error } = resp
+      if (error) throw error
+
+      const rows = data || []
+      return rows.map((r: any) => ({
+        id: r.id,
+        carrier: r.carrier,
+        ps_count: r.ps_count,
+        avd_count: r.avd_count,
+        raceway_pallets: r.raceway_pallets,
+        fitting_pallets: r.fitting_pallets,
+        cartons_95: r.cartons_95,
+        total_pallets: r.total_pallets,
+        total_cartons: r.total_cartons,
+        created_date: r.created_time,
+        updated_date: r.created_time,
+        created_by: r.profile?.full_name || 'Unknown User',
+      }))
+    } catch (error) {
+      console.warn('LiveLoad.list falling back due to error/timeout:', error)
+      return await dataClient.entities.LiveLoad.list(orderBy, limit)
+    }
+  },
+}

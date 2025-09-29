@@ -159,15 +159,21 @@ export default function AdminDashboardPage() {
                 csvContent += `EXPORT DATE RANGE: ${startDateStr} to ${endDateStr}\n\n`;
             }
 
-            const fetchDataAndAppendToCsv = async (tableName: string, csvHeaders: string, dataMapper: (data: any) => string, dateColumn: 'created_at' | 'submitted_at' = 'created_at') => {
-                let query = supabase.from(tableName).select('*');
+            const fetchDataAndAppendToCsv = async (
+                tableName: string,
+                csvHeaders: string,
+                dataMapper: (data: any) => string,
+                dateColumn: 'created_at' | 'submitted_at' | 'created_time' | 'pickup_date' = 'created_at',
+                buildQuery?: (dateColumn: string) => any
+            ) => {
+                let query = buildQuery ? buildQuery(dateColumn) : supabase.from(tableName).select('*');
                 if (exportStartDate) query = query.gte(dateColumn, exportStartDate.toISOString());
                 if (exportEndDate) {
                     const endOfDay = new Date(exportEndDate);
                     endOfDay.setHours(23, 59, 59, 999);
                     query = query.lte(dateColumn, endOfDay.toISOString());
                 }
-                query = query.order(dateColumn, { ascending: true });
+                if (query.order) query = query.order(dateColumn, { ascending: true });
 
                 const { data, error } = await query;
                 if (error) {
@@ -191,8 +197,8 @@ export default function AdminDashboardPage() {
             await fetchDataAndAppendToCsv('liveloads',
                 'Date,User,Carrier,P&S Count,AVD Count,Raceway Pallets,Fitting Pallets,Cartons 95,Total Pallets,Total Cartons',
                 (load) => [
-                    formatInEST(load.submitted_at || load.created_at), // Prefer submitted_at, fallback to created_at
-                    load.created_by ? load.created_by.split('@')[0] : '',
+                    formatInEST(load.created_time),
+                    load.profile?.full_name || '',
                     load.carrier || '',
                     load.ps_count || 0,
                     load.avd_count || 0,
@@ -202,35 +208,38 @@ export default function AdminDashboardPage() {
                     load.total_pallets || 0,
                     load.total_cartons || 0
                 ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','),
-                'submitted_at' // Use submitted_at for filtering
+                'created_time',
+                () => supabase
+                    .from('liveloads')
+                    .select('id,carrier,ps_count,avd_count,raceway_pallets,fitting_pallets,cartons_95,total_pallets,total_cartons,created_time,submitted_by,profile:profiles(full_name)')
             );
 
-            // Call-Ins
-            await fetchDataAndAppendToCsv('callins',
-                'Date,User,Dock Door,Carrier,Trailer Number,Ready Time,Status',
+            // Call-Ins (use view for user_display + consistent fields)
+            await fetchDataAndAppendToCsv('v_callins',
+                'Date,User,Dock Door,Carrier,Trailer Number,Ready Time',
                 (call) => [
-                    formatInEST(call.submitted_at || call.created_at), // Prefer submitted_at, fallback to created_at
-                    call.created_by ? call.created_by.split('@')[0] : '',
-                    call.dock_door || '',
+                    formatInEST(call.submitted_at),
+                    call.user_display || '',
+                    call.dock || '',
                     call.carrier || '',
-                    call.trailer_number || '',
-                    call.ready_time ? formatInEST(call.ready_time) : '',
-                    call.status || ''
+                    call.trailer_no || '',
+                    call.ready_time || '',
+                 // call.status || ''
                 ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','),
                 'submitted_at' // Use submitted_at for filtering
             );
 
-            // Dimensions
-            await fetchDataAndAppendToCsv('dimensions',
+            // Dimensions (use view for line-level with user_display)
+            await fetchDataAndAppendToCsv('v_dimensions',
                 'Date,User,Ship Via,Control Number,Wave Number,Skids Count,Cartons Count,Length (in),Width (in),Height (in),Qty,Volume (in3)',
                 (dim) => [
                     formatInEST(dim.created_at),
-                    dim.created_by ? dim.created_by.split('@')[0] : '',
+                    dim.user_display || '',
                     dim.ship_via || '',
-                    dim.control_number || '',
-                    dim.wave_number || '',
-                    dim.skids ? dim.skids.length : 0,
-                    dim.cartons ? dim.cartons.length : 0,
+                    dim.control_no || dim.control_number || '',
+                    dim.wave_no || dim.wave_number || '',
+                    dim.skids || 0,
+                    dim.cartons || 0,
                     dim.length_in || '',
                     dim.width_in || '',
                     dim.height_in || '',
@@ -239,80 +248,83 @@ export default function AdminDashboardPage() {
                 ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')
             );
 
-            // Changeovers
-            await fetchDataAndAppendToCsv('changeovers',
+            // Changeovers (use view for user_display)
+            await fetchDataAndAppendToCsv('v_changeovers',
                 'Date,User,Department,Original Ship Via,New Ship Via,Control Number,Wave Number,Pallets,Cartons,SO Number,Delivery Number,Reason',
                 (change) => [
                     formatInEST(change.created_at),
-                    change.created_by ? change.created_by.split('@')[0] : '',
+                    change.user_display || '',
                     change.department || '',
                     change.original_ship_via || '',
                     change.new_ship_via || '',
-                    change.control_number || '',
-                    change.wave_number || '',
+                    change.control_no || change.control_number || '',
+                    change.wave_no || change.wave_number || '',
                     change.pallets || 0,
                     change.cartons || 0,
-                    change.so_number || '',
-                    change.delivery_number || '',
+                    change.so_no || change.so_number || '',
+                    change.delivery_no || change.delivery_number || '',
                     change.reason_for_change || ''
                 ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')
             );
 
-            // BTX
-            await fetchDataAndAppendToCsv('btx',
-                'Date,User,Shipment Type,Control Number,Wave Number,Tracking Number,Pallets Count,Cartons Count,Length (in),Width (in),Height (in),Qty,Volume (in3),Submission ID',
+            // BTX (use view for user_display; no tracking number column)
+            await fetchDataAndAppendToCsv('v_btx',
+                'Date,User,Shipment Type,Control Number,Wave Number,Pallets Count,Cartons Count,Length (in),Width (in),Height (in),Qty,Volume (in3)',
                 (item) => [
                     formatInEST(item.created_at),
-                    item.user_display || (item.created_by ? item.created_by.split('@')[0] : ''),
+                    item.user_display || '',
                     item.type || '',
                     item.control_no || '',
                     item.wave_no || '',
-                    item.tracking_number || '',
-                    item.pallets ? item.pallets.length : 0,
-                    item.cartons ? item.cartons.length : 0,
+                    item.pallets || 0,
+                    item.cartons || 0,
                     item.length_in || '',
                     item.width_in || '',
                     item.height_in || '',
                     item.qty || '',
                     item.volume_in3 || '',
-                    item.submission_id || ''
+                 // item.submission_id || ''
                 ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')
             );
 
-            // Truckloads
-            await fetchDataAndAppendToCsv('truckloads',
+            // Truckloads (use v_truckloads view with user_display)
+            await fetchDataAndAppendToCsv('v_truckloads',
                 'Date,User,Pickup Date,Department,Ship Via,Control Numbers,Wave Number,PO Numbers,Company Name,Destination City,Destination State,Total Pieces,Weight,Completed',
                 (truck) => [
-                    formatInEST(truck.created_at),
-                    truck.created_by ? truck.created_by.split('@')[0] : '',
+                    formatInEST(truck.pickup_date || truck.created_at),
+                    truck.user_display || '',
                     truck.pickup_date ? formatDate(truck.pickup_date) : '',
                     truck.department || '',
                     truck.ship_via || '',
                     truck.control_numbers ? (Array.isArray(truck.control_numbers) ? truck.control_numbers.join('; ') : truck.control_numbers) : '',
-                    truck.wave_number || '',
+                    truck.wave_no || truck.wave_number || '',
                     truck.po_numbers ? (Array.isArray(truck.po_numbers) ? truck.po_numbers.join('; ') : truck.po_numbers) : '',
                     truck.company_name || '',
-                    truck.destination_city || '',
-                    truck.destination_state || '',
-                    truck.total_pieces || 0,
-                    truck.weight || 0,
-                    truck.completed ? 'Yes' : 'No'
+                    (truck.destination?.split(', ')[0] || truck.destination_city || '') ,
+                    (truck.destination?.split(', ')[1] || truck.destination_state || ''),
+                    (truck.pieces || truck.total_pieces || 0),
+                    (truck.weight_lbs || truck.weight || 0),
+                    (truck.is_completed || truck.completed) ? 'Yes' : 'No'
                 ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')
-            );
+            , 'pickup_date');
 
-            // Line Counts
-            await fetchDataAndAppendToCsv('line_counts',
+            // Line Counts (join profiles for user name; show the actual date of count)
+            await fetchDataAndAppendToCsv(
+                'line_counts',
                 'Date of Count,Time Period,User,Preferreds,Parcels,LTL,Total',
                 (count) => [
-                    count.date ? formatDate(count.date) : '', // 'date' is the actual date of count, not submission date
+                    count.count_date ? formatDate(count.count_date) : '',
                     count.time_period || '',
-                    count.submitted_by ? count.submitted_by.split('@')[0] : '',
+                    (count.profile?.full_name || ''),
                     count.preferreds || 0,
                     count.parcels || 0,
                     count.ltl || 0,
                     count.total || 0
                 ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','),
-                'submitted_at' // Use submitted_at for filtering
+                'submitted_at', // filter range by when it was submitted
+                () => supabase
+                    .from('line_counts')
+                    .select('count_date,time_period,preferreds,parcels,ltl,total,submitted_at,submitted_by,profile:profiles(full_name)')
             );
 
             // Create and download file

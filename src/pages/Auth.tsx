@@ -41,10 +41,14 @@ export default function AuthPage() {
       <div className="bg-white rounded-2xl shadow-lg w-full max-w-md p-8">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <img 
-            src="/logos/paltralogotp.png" 
-            alt="Paltra Logo" 
-            className="w-auto h-28 -mb-6"
+          <img
+            src="/logos/paltralogonavy.png"
+            alt="Paltra Logo"
+            width="192"
+            height="96"
+            decoding="async"
+            loading="eager"
+            className="w-auto h-24 rounded-full -mb-4"
           />
         </div>
 
@@ -69,6 +73,7 @@ export default function AuthPage() {
             <div className="relative">
               <input
                 type="email"
+                autoComplete="username"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full px-4 py-3 pl-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
@@ -89,6 +94,7 @@ export default function AuthPage() {
             <div className="relative">
               <input
                 type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full px-4 py-3 pl-12 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"

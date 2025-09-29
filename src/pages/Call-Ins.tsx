@@ -90,11 +90,22 @@ export default function CallInsPage() {
           selectedDate: selectedDate,
           carrier: carrierFilter === 'all' ? null : carrierFilter
         };
-        const data = await CallIn.filter(criteria);
-        console.log('Fetched filtered call-ins data:', data);
-        // Ensure newest first on the page
-        const sorted = [...(data || [])].sort((a, b) => new Date(b.submitted_at || b.created_date).getTime() - new Date(a.submitted_at || a.created_date).getTime());
-        setRecords(sorted);
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+          console.warn('CallIns: offline, skipping refresh and keeping previous results');
+        } else {
+          const data = await CallIn.filter(criteria);
+          console.log('Fetched filtered call-ins data:', data);
+          // Ensure newest first on the page
+          const sorted = [...(data || [])].sort((a, b) => new Date(b.submitted_at || b.created_date).getTime() - new Date(a.submitted_at || a.created_date).getTime());
+          // Only clear table when we truly have no results for this date/carrier; otherwise keep last good
+          if (sorted.length > 0) {
+            setRecords(sorted);
+          } else if (records.length === 0) {
+            setRecords(sorted);
+          } else {
+            console.warn('CallIns: empty refresh; keeping previous table contents');
+          }
+        }
         setCurrentPage(1);
       } catch(e) {
         console.error("Failed to load data", e);
@@ -110,10 +121,14 @@ export default function CallInsPage() {
       selectedDate: selectedDate,
       carrier: carrierFilter === 'all' ? null : carrierFilter
     };
-    const data = await CallIn.filter(criteria);
-    console.log('Refreshed call-ins data:', data);
-    const sorted = [...(data || [])].sort((a, b) => new Date(b.submitted_at || b.created_date).getTime() - new Date(a.submitted_at || a.created_date).getTime());
-    setRecords(sorted);
+    try {
+      const data = await CallIn.filter(criteria);
+      console.log('Refreshed call-ins data:', data);
+      const sorted = [...(data || [])].sort((a, b) => new Date(b.submitted_at || b.created_date).getTime() - new Date(a.submitted_at || a.created_date).getTime());
+      if (sorted.length > 0) setRecords(sorted);
+    } catch (e) {
+      console.warn('CallIns: refresh failed, keeping existing results', e);
+    }
     setCurrentPage(1);
   };
 
@@ -127,6 +142,7 @@ export default function CallInsPage() {
     const today = new Date();
     let readyDateTime;
 
+    let isNextDay = false;
     if (readyTime === 'now') {
         const now = new Date();
         const roundedDateTime = new Date(now);
@@ -143,6 +159,11 @@ export default function CallInsPage() {
     } else {
         const [hours, minutes] = readyTime.split(':');
         readyDateTime = new Date(today.getFullYear(), today.getMonth(), today.getDate(), Number(hours), Number(minutes));
+        // If chosen time is earlier than now, schedule for the following day
+        if (readyDateTime.getTime() <= Date.now()) {
+          readyDateTime.setDate(readyDateTime.getDate() + 1);
+          isNextDay = true;
+        }
     }
     
     const data = {
@@ -150,7 +171,8 @@ export default function CallInsPage() {
       carrier, 
       trailer: trailerNumber, 
       ready_time: readyDateTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
-      display_ready_time: readyDateTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) 
+      display_ready_time: readyDateTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+      is_next_day: isNextDay
     };
     setConfirmData(data);
     setShowConfirm(true);
@@ -185,12 +207,19 @@ export default function CallInsPage() {
           ? `${confirmData.ready_time}:00` 
           : confirmData.ready_time;
 
-        const payload = {
+        const payload: any = {
           carrier: confirmData.carrier,
           ready_time: formattedReadyTime,
           trailer_no: confirmData.trailer,
           dock: confirmData.dock_door ? Number(confirmData.dock_door) : 0,
         };
+
+        // If ready time was earlier than now when selected, store it as tomorrow by overriding submitted_at
+        if (confirmData.is_next_day) {
+          const override = new Date();
+          override.setDate(override.getDate() + 1);
+          payload.submitted_at = override.toISOString();
+        }
 
         console.log('Submitting payload:', payload);
 

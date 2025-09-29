@@ -31,6 +31,33 @@ const navigationItems = [
   { title: 'Help', url: createPageUrl('Help'), icon: HelpCircle, adminOnly: false },
 ];
 
+// Lightweight page module prefetchers to speed up first navigation
+const pagePrefetchLoaders: Record<string, (() => Promise<unknown>) | undefined> = {
+  'Dashboard': () => import('./Dashboard'),
+  'Admin Dashboard': () => import('./AdminDashboard'),
+  'Dock Doors': () => import('./DockDoors'),
+  'Live Loads': () => import('./LiveLoads'),
+  'Call-Ins': () => import('./Call-Ins'),
+  'Dimensions': () => import('./Dimensions'),
+  'Changeovers': () => import('./Changeovers'),
+  'BTX': () => import('./BTX'),
+  'Truckloads': () => import('./Truckloads'),
+  'Line Counts': () => import('./Line-Counts'),
+  'Help': () => import('./Help'),
+};
+
+const prefetched = new Set<string>();
+const prefetchPage = (title: string) => {
+  if (prefetched.has(title)) return;
+  const loader = pagePrefetchLoaders[title];
+  if (!loader) return;
+  prefetched.add(title);
+  loader().catch(() => {
+    // noop — prefetch failures shouldn't affect navigation
+    prefetched.delete(title);
+  });
+};
+
 const NavSkeleton = () => (
     <div className="space-y-2">
         {Array.from({ length: 5 }).map((_, i) => (
@@ -76,6 +103,8 @@ const NavLink = React.memo(({ item, pathname, isMobile = false }: {
   return (
     <Link
       to={item.url}
+      onMouseEnter={() => prefetchPage(item.title)}
+      onFocus={() => prefetchPage(item.title)}
       className={`group flex items-center gap-3 rounded-xl px-4 py-3 transition-all duration-200 ${isActive ? activeClasses : inactiveClasses} ${sizeClasses}`}
     >
       <item.icon className={`h-5 w-5 transition-transform duration-200 ${isActive ? '' : 'group-hover:scale-110'}`} />
@@ -110,6 +139,22 @@ export default function Layout({ children, currentPageName }) {
   const visibleNavItems = React.useMemo(() => {
     return navigationItems.filter(item => !item.adminOnly || profile?.role === 'admin');
   }, [profile]);
+
+  // Idle prefetch a few common pages after initial render
+  React.useEffect(() => {
+    const idle = (cb: () => void) =>
+      (window as any).requestIdleCallback ? (window as any).requestIdleCallback(cb) : setTimeout(cb, 600);
+    const cancel = (id: any) =>
+      (window as any).cancelIdleCallback ? (window as any).cancelIdleCallback(id) : clearTimeout(id);
+
+    const handle = idle(() => {
+      // Prefetch first 3 visible items to improve perceived speed
+      try {
+        visibleNavItems.slice(0, 3).forEach(i => prefetchPage(i.title));
+      } catch {}
+    });
+    return () => cancel(handle as any);
+  }, [visibleNavItems]);
 
   if (profile && profile.is_approved === false) {
     return (
@@ -246,7 +291,7 @@ export default function Layout({ children, currentPageName }) {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleSignOut} className="text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg mx-2 mb-2 transition-colors">
+                <DropdownMenuItem onClick={handleSignOut} className="text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg mx-2 mb-2 transition-colors hover:cursor-pointer">
                   <LogOut className="mr-3 h-4 w-4" />
                   Sign Out
                 </DropdownMenuItem>

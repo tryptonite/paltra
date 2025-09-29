@@ -505,12 +505,16 @@ export const CallIn = {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('User not authenticated')
 
-      const dbPayload = {
+      const dbPayload: any = {
         carrier: payload.carrier,
         ready_time: payload.ready_time,
         trailer_no: payload.trailer_no,
         dock: payload.dock || 0,
         submitted_by: user.id,
+      }
+
+      if (payload.submitted_at) {
+        dbPayload.submitted_at = payload.submitted_at
       }
 
       const { data: insertData, error: insErr } = await supabase

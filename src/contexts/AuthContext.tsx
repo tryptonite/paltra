@@ -18,6 +18,8 @@ type UserProfile = {
 
 const AUTH_CHECK_INTERVAL_MS = 60 * 60 * 1000
 const SUPABASE_REQUEST_TIMEOUT_MS = 8000
+// Disable visibility-based auth refresh by default to avoid noisy tab-switch fetches
+const VISIBILITY_REFRESH_ENABLED = (import.meta as any).env?.VITE_VISIBILITY_AUTH_REFRESH === 'true'
 
 interface AuthContextType {
   user: SupabaseUser | null
@@ -66,21 +68,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const signOut = React.useCallback(async () => {
-    console.log('AuthContext: Signing out...')
-    let responseError: AuthError | null = null
-    try {
-      const { error } = await runWithTimeout(supabase.auth.signOut(), 'signOut')
-      if (error) {
-        console.error('AuthContext: Sign out error:', error)
-        responseError = error
-      }
-    } catch (error: any) {
-      console.error('AuthContext: Sign out request failed:', error)
-      responseError = { message: error?.message || 'Sign out request timed out.' } as AuthError
-    } finally {
-      clearSessionState('signOut')
-    }
-    return { error: responseError }
+    console.log('AuthContext: Signing out (optimistic)...')
+    // Optimistically clear UI immediately so logout feels instant
+    clearSessionState('optimistic-signout')
+
+    // Fire the Supabase sign out in the background
+    runWithTimeout(supabase.auth.signOut(), 'signOut')
+      .then(({ error }) => {
+        if (error) {
+          console.error('AuthContext: Sign out error (background):', error)
+        }
+      })
+      .catch((error: any) => {
+        console.error('AuthContext: Sign out request failed (background):', error)
+      })
+
+    // Return immediately; UI is already logged out
+    return { error: null as AuthError | null }
   }, [runWithTimeout, clearSessionState])
 
   const fetchProfile = React.useCallback(async (authUser: SupabaseUser) => {
@@ -361,6 +365,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const sessionUser = session?.user || null
 
   const refreshAuthIfNeeded = React.useCallback(async (force = false) => {
+    if (!VISIBILITY_REFRESH_ENABLED) return
     if (!sessionUser) {
       return
     }
@@ -368,6 +373,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const now = Date.now()
     const needsRefresh = force || now - lastAuthCheckRef.current >= AUTH_CHECK_INTERVAL_MS
     if (!needsRefresh) {
+      return
+    }
+
+    // Skip if offline; we'll try again when online or on next manual auth event
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       return
     }
 
@@ -383,6 +393,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (typeof document === 'undefined') {
+      return
+    }
+
+    if (!VISIBILITY_REFRESH_ENABLED) {
       return
     }
 

@@ -63,6 +63,8 @@ const isSameDay = (d1, d2) => {
 
 export default function CallInsPage() {
   const [records, setRecords] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [dockDoor, setDockDoor] = useState('');
   const [carrier, setCarrier] = useState('');
   const [trailerNumber, setTrailerNumber] = useState('');
@@ -90,7 +92,10 @@ export default function CallInsPage() {
         };
         const data = await CallIn.filter(criteria);
         console.log('Fetched filtered call-ins data:', data);
-        setRecords(data);
+        // Ensure newest first on the page
+        const sorted = [...(data || [])].sort((a, b) => new Date(b.submitted_at || b.created_date).getTime() - new Date(a.submitted_at || a.created_date).getTime());
+        setRecords(sorted);
+        setCurrentPage(1);
       } catch(e) {
         console.error("Failed to load data", e);
       }
@@ -107,7 +112,9 @@ export default function CallInsPage() {
     };
     const data = await CallIn.filter(criteria);
     console.log('Refreshed call-ins data:', data);
-    setRecords(data);
+    const sorted = [...(data || [])].sort((a, b) => new Date(b.submitted_at || b.created_date).getTime() - new Date(a.submitted_at || a.created_date).getTime());
+    setRecords(sorted);
+    setCurrentPage(1);
   };
 
   const handleSubmit = async (e) => {
@@ -251,7 +258,7 @@ export default function CallInsPage() {
                 id="dockDoor" 
                 type="number"
                 min="1"
-                max="99"
+                max="32"
                 value={dockDoor} 
                 onChange={(e) => {
                   const value = e.target.value;
@@ -358,7 +365,7 @@ export default function CallInsPage() {
             <TableBody>
               {isLoading && <TableRow><TableCell colSpan="6" className="text-center py-8 text-slate-500">Loading...</TableCell></TableRow>}
               {!isLoading && filteredRecords.length === 0 && <TableRow><TableCell colSpan="6" className="text-center py-8 text-slate-500">No call-ins found for this date.</TableCell></TableRow>}
-              {filteredRecords.map(record => (
+              {filteredRecords.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE).map(record => (
                 <TableRow key={record.id} className="hover:bg-slate-50 transition-colors border-slate-100">
                   <TableCell className="text-sm text-slate-600">{formatInEST(record.submitted_at, { dateStyle: 'short', timeStyle: 'short' })}</TableCell>
                   <TableCell className="text-sm text-slate-700">{(record.profile as any)?.full_name || 'N/A'}</TableCell>
@@ -370,6 +377,23 @@ export default function CallInsPage() {
               ))}
             </TableBody>
           </Table>
+          {/* Pagination */}
+          {!isLoading && filteredRecords.length > PAGE_SIZE && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200">
+              <div className="text-xs text-slate-600">
+                Showing {((currentPage - 1) * PAGE_SIZE) + 1}–{Math.min(currentPage * PAGE_SIZE, filteredRecords.length)} of {filteredRecords.length}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="outline" size="sm" disabled={currentPage === 1} onClick={() => setCurrentPage(p => Math.max(1, p - 1))}>
+                  Prev
+                </Button>
+                <span className="text-xs text-slate-600">Page {currentPage} of {Math.ceil(filteredRecords.length / PAGE_SIZE)}</span>
+                <Button type="button" variant="outline" size="sm" disabled={currentPage >= Math.ceil(filteredRecords.length / PAGE_SIZE)} onClick={() => setCurrentPage(p => Math.min(Math.ceil(filteredRecords.length / PAGE_SIZE), p + 1))}>
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
       

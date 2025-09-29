@@ -16,8 +16,10 @@ const LineCounts = lazy(() => import('./Line-Counts'))
 const LiveLoads = lazy(() => import('./LiveLoads'))
 const Truckloads = lazy(() => import('./Truckloads'))
 const UserApproval = lazy(() => import('./UserApproval'))
+const Dashboard = lazy(() => import('./Dashboard'))
 
 const PAGES = {
+  Dashboard,
   Dimensions,
   LiveLoads,
   BTX,
@@ -111,7 +113,8 @@ function PagesContent(): React.JSX.Element {
     <Suspense fallback={<PageLoading />}>
       <Layout currentPageName={currentPage}>
         <Routes>
-          <Route path="/" element={<Dimensions />} />
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/Dashboard" element={<Dashboard />} />
           <Route path="/Dimensions" element={<Dimensions />} />
           <Route path="/LiveLoads" element={<LiveLoads />} />
           <Route path="/BTX" element={<BTX />} />

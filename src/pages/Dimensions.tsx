@@ -32,6 +32,8 @@ const formatInEST = (dateString: string, options: { dateStyle?: 'short'; timeSty
 
 export default function DimensionsPage() {
   const [records, setRecords] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 14;
   const [user, setUser] = useState(null);
   const [shipVia, setShipVia] = useState('');
   const [controlNumber, setControlNumber] = useState('');
@@ -106,6 +108,7 @@ export default function DimensionsPage() {
         console.error("Error fetching dimensions summary, falling back", error);
         const fallbackData = await Dimension.list('-created_date');
         setRecords(fallbackData);
+        setCurrentPage(1);
       } else {
         const mappedData = (data || []).map(r => ({
           created_date: r.created_at,
@@ -117,6 +120,7 @@ export default function DimensionsPage() {
           cartons: r.cartons,
         }));
         setRecords(mappedData);
+        setCurrentPage(1);
       }
     } catch (e) {
       console.error("Failed to load data", e);
@@ -182,6 +186,16 @@ export default function DimensionsPage() {
       skids: skids.filter(s => s.length && s.width && s.height),
       cartons: cartons.filter(c => c.length && c.width && c.height),
     };
+
+    // Require at least one dimension row (skid or carton)
+    if ((data.skids?.length || 0) + (data.cartons?.length || 0) === 0) {
+      toast({
+        title: 'No Dimensions Entered',
+        description: 'Please add at least one skid or carton with L × W × H before saving.',
+        variant: 'destructive',
+      })
+      return
+    }
     setConfirmData(data);
     setShowConfirm(true);
   };
@@ -191,11 +205,23 @@ export default function DimensionsPage() {
       setIsLoading(true);
       setShowConfirm(false);
 
-      const newRecord = await Dimension.create({
-        ...confirmData,
-        user_role: user.role,
-        user_department: user.department,
-      });
+      let newRecord
+      try {
+        newRecord = await Dimension.create({
+          ...confirmData,
+          user_role: user.role,
+          user_department: user.department,
+        })
+      } catch (err) {
+        console.error('Failed to create dimensions:', err)
+        toast({
+          title: 'Save Failed',
+          description: (err && err.message) ? String(err.message) : 'Could not save dimensions. Please try again.',
+          variant: 'destructive',
+        })
+        setIsLoading(false)
+        return
+      }
 
       setShipVia('');
       setControlNumber('');
@@ -213,10 +239,15 @@ export default function DimensionsPage() {
               <ToastAction
                   altText="Undo"
                   onClick={async () => {
-                      if (newRecord && newRecord[0]) {
-                        await Dimension.delete(newRecord[0].id);
+                      try {
+                        if (newRecord && newRecord.id) {
+                          await Dimension.delete(newRecord.id);
+                        }
                         await fetchRecords();
                         toast({ description: 'Entry successfully removed.' });
+                      } catch (e) {
+                        console.error('Failed to undo dimension entry:', e)
+                        toast({ description: 'Failed to undo. Please try again.', variant: 'destructive' })
                       }
                   }}
               >
@@ -300,7 +331,7 @@ export default function DimensionsPage() {
               <TableBody>
                 {isLoading && <TableRow><TableCell colSpan={7} className="text-center py-8 text-slate-500">Loading...</TableCell></TableRow>}
                 {!isLoading && records.length === 0 && <TableRow><TableCell colSpan={7} className="text-center py-8 text-slate-500">No records found.</TableCell></TableRow>}
-                {records.map((record, index) => (
+                {records.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE).map((record, index) => (
                   <TableRow key={record.id || `record-${index}`} onClick={() => handleRowClick(record)} className="cursor-pointer hover:bg-slate-50 transition-colors border-slate-100">
                     <TableCell className="text-sm text-slate-600">{formatInEST(record.created_date, { dateStyle: 'short', timeStyle: 'short' })}</TableCell>
                     <TableCell className="text-sm text-slate-700 font-medium">{record.created_by?.split('@')[0] || 'Unknown'}</TableCell>
@@ -313,6 +344,23 @@ export default function DimensionsPage() {
                 ))}
               </TableBody>
             </Table>
+            {/* Pagination */}
+            {!isLoading && records.length > PAGE_SIZE && (
+              <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200">
+                <div className="text-xs text-slate-600">
+                  Showing {((currentPage - 1) * PAGE_SIZE) + 1}–{Math.min(currentPage * PAGE_SIZE, records.length)} of {records.length}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="outline" size="sm" disabled={currentPage === 1} onClick={() => setCurrentPage(p => Math.max(1, p - 1))}>
+                    Prev
+                  </Button>
+                  <span className="text-xs text-slate-600">Page {currentPage} of {Math.ceil(records.length / PAGE_SIZE)}</span>
+                  <Button type="button" variant="outline" size="sm" disabled={currentPage >= Math.ceil(records.length / PAGE_SIZE)} onClick={() => setCurrentPage(p => Math.min(Math.ceil(records.length / PAGE_SIZE), p + 1))}>
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

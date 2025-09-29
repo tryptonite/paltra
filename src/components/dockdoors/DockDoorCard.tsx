@@ -34,7 +34,7 @@ export default function DockDoorCard({ door, onSelect }) {
                 <div className="text-slate-500 text-xs font-medium truncate">Click to assign</div>
               </div>
             </div>
-            <Badge className={`${statusStyles[door.status]} text-xs px-2 py-1 flex-shrink-0`}>{door.status}</Badge>
+            <Badge variant="outline" className={`${statusStyles[door.status]} border-transparent text-xs px-2 py-1 flex-shrink-0`}>{door.status}</Badge>
         </div>
       </Card>
     );
@@ -47,11 +47,11 @@ export default function DockDoorCard({ door, onSelect }) {
       className={`cursor-pointer hover:shadow-lg transition-all duration-300 bg-white/70 backdrop-blur-sm h-auto p-3 border-2 ${statusBorders[door.status] || 'border-transparent'}`}
     >
       <CardHeader className="flex flex-row items-center justify-between p-0 pb-2">
-        <CardTitle className="text-base font-bold text-slate-800 flex items-center gap-2 min-w-0 flex-1">
+        <CardTitle className="text-base font-semibold text-slate-800 text-md flex items-center gap-2 min-w-0 flex-1">
             <Warehouse className="h-4 w-4 text-slate-500 flex-shrink-0" />
             <span className="truncate">Dock Door {door.door_number}</span>
         </CardTitle>
-        <Badge className={`${statusStyles[door.status]} text-xs px-2 py-1 flex-shrink-0`}>{door.status}</Badge>
+        <Badge variant="outline" className={`${statusStyles[door.status]} border-transparent text-xs px-2 py-1 flex-shrink-0`}>{door.status}</Badge>
       </CardHeader>
       <CardContent className="p-0">
         <div className="space-y-3 text-sm">

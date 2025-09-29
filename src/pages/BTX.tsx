@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { User } from '@/api/entities';
-import { createBtxSubmission, listBtxRecent, getBtxSubmission } from '@/api/btx';
+import { createBtxSubmission, listBtxRecent, getBtxSubmission, deleteBtxSubmission } from '@/api/btx';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -34,12 +34,13 @@ const SHIPMENT_TYPES = ["BXA", "BXP", "BX2", "BX3"];
 
 export default function BTXPage() {
   const [records, setRecords] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [user, setUser] = useState(null);
   const [shipmentType, setShipmentType] = useState('');
   const [controlNumber, setControlNumber] = useState('');
   const [controlNumberError, setControlNumberError] = useState('');
   const [waveNumber, setWaveNumber] = useState('');
-  const [trackingNumber, setTrackingNumber] = useState('NCS');
   const [pallets, setPallets] = useState([{ length: '', width: '', height: '' }]);
   const [cartons, setCartons] = useState([{ length: '', width: '', height: '' }]);
   const [isLoading, setIsLoading] = useState(true);
@@ -94,6 +95,7 @@ export default function BTXPage() {
     try {
       const data = await listBtxRecent();
       setRecords(data || []);
+      setCurrentPage(1);
     } catch (error) {
       console.error("Failed to fetch records:", error);
     }
@@ -104,7 +106,6 @@ export default function BTXPage() {
     setControlNumber('');
     setControlNumberError(''); // Reset error state on form reset
     setWaveNumber('');
-    setTrackingNumber('NCS');
     setPallets([{ length: '', width: '', height: '' }]);
     setCartons([{ length: '', width: '', height: '' }]);
   };
@@ -127,13 +128,25 @@ export default function BTXPage() {
         return;
     }
 
+    const filledPallets = pallets.filter(p => p.length && p.width && p.height);
+    const filledCartons = cartons.filter(c => c.length && c.width && c.height);
+
+    // Require at least one dimension row
+    if (filledPallets.length + filledCartons.length === 0) {
+      toast({
+        title: 'No Dimensions Entered',
+        description: 'Please add at least one pallet or carton with L × W × H before submitting.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     const data = {
       shipment_type: shipmentType,
       control_number: controlNumber,
       wave_number: waveNumber,
-      tracking_number: trackingNumber,
-      pallets: pallets.filter(p => p.length && p.width && p.height).length,
-      cartons: cartons.filter(c => c.length && c.width && c.height).length,
+      pallets: filledPallets.length,
+      cartons: filledCartons.length,
     };
     setConfirmData(data);
     setShowConfirm(true);
@@ -163,6 +176,17 @@ export default function BTXPage() {
         qty: 1
       }))
     ];
+
+    if (lines.length === 0) {
+      // Defensive check in case user confirmed after removing all rows
+      toast({
+        title: 'No Dimensions Entered',
+        description: 'Please add at least one pallet or carton with L × W × H before submitting.',
+        variant: 'destructive',
+      });
+      setIsLoading(false);
+      return;
+    }
 
     const result = await createBtxSubmission({
       type: confirmData.shipment_type,
@@ -199,26 +223,37 @@ Date: ${new Date().toLocaleString()}
       console.error('Failed to send email notification:', error);
     }
 */
+    const submissionId = result?.submission_id;
+
     resetForm();
     setConfirmData(null);
     await fetchRecords();
 
     toast({
-        title: 'Entry Saved',
-        description: 'Your BTX entry has been submitted.',
-        duration: 10000,
-        action: (
-            <ToastAction
-                alt="Undo"
-                onClick={async () => {
-                    // TODO: Implement delete functionality with Supabase
-                    await fetchRecords();
-                    toast({ description: 'Entry successfully removed.' });
-                }}
-            >
-                Undo
-            </ToastAction>
-        ),
+      title: 'Entry Saved',
+      description: 'Your BTX entry has been submitted.',
+      duration: 10000,
+      action: (
+        <ToastAction
+          alt="Undo"
+          onClick={async () => {
+            try {
+              if (submissionId) {
+                await deleteBtxSubmission(submissionId);
+                await fetchRecords();
+                toast({ description: 'Entry successfully removed.' });
+              } else {
+                toast({ description: 'Nothing to undo.', variant: 'destructive' });
+              }
+            } catch (e) {
+              console.error('Failed to undo BTX submission:', e);
+              toast({ description: 'Failed to undo. Please try again.', variant: 'destructive' });
+            }
+          }}
+        >
+          Undo
+        </ToastAction>
+      ),
     });
 
     setIsLoading(false);
@@ -311,16 +346,7 @@ Date: ${new Date().toLocaleString()}
               <DimensionRowInput items={pallets} setItems={setPallets} type="pallet" />
               <DimensionRowInput items={cartons} setItems={setCartons} type="carton" />
 
-              <div>
-                <Label htmlFor="trackingNumber" className="text-slate-700 font-medium">Tracking Number <span className="text-slate-500 font-normal">(for Shipping only)</span></Label>
-                <Input
-                  id="trackingNumber"
-                  value={trackingNumber}
-                  onChange={(e) => setTrackingNumber(e.target.value.toUpperCase())}
-                  className="mt-2 rounded-lg border-slate-300 focus:border-blue-500 focus:ring-blue-500 w-full"
-                  placeholder="NCS..."
-                />
-              </div>
+              {/* Tracking Number removed per requirements */}
 
               <Button type="submit" disabled={isLoading} className="w-full bg-gradient-to-r from-blue-600 to-teal-600 hover:from-blue-700 hover:to-teal-700 text-white font-medium py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200">
                 {isLoading ? 'Saving...' : 'Submit BTX Entry'}
@@ -343,28 +369,44 @@ Date: ${new Date().toLocaleString()}
                   <TableHead className="w-16 text-slate-600 font-medium">Type</TableHead>
                   <TableHead className="w-20 text-slate-600 font-medium">Control #</TableHead>
                   <TableHead className="w-16 text-slate-600 font-medium">Wave #</TableHead>
-                  <TableHead className="w-28 text-slate-600 font-medium">Tracking #</TableHead>
+                  {/* Tracking # column removed */}
                   <TableHead className="text-center w-16 text-slate-600 font-medium">Pallets</TableHead>
                   <TableHead className="text-center w-16 text-slate-600 font-medium">Cartons</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isLoading && <TableRow><TableCell colSpan="8" className="text-center py-8 text-slate-500">Loading...</TableCell></TableRow>}
-                {!isLoading && records.length === 0 && <TableRow><TableCell colSpan="8" className="text-center py-8 text-slate-500">No records found.</TableCell></TableRow>}
-                {records.map(record => (
+                {isLoading && <TableRow><TableCell colSpan="7" className="text-center py-8 text-slate-500">Loading...</TableCell></TableRow>}
+                {!isLoading && records.length === 0 && <TableRow><TableCell colSpan="7" className="text-center py-8 text-slate-500">No records found.</TableCell></TableRow>}
+                {records.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE).map(record => (
                   <TableRow key={record.submission_id} onClick={() => handleRowClick(record)} className="hover:bg-slate-50 transition-colors border-slate-100 cursor-pointer">
                     <TableCell className="text-sm text-slate-600">{formatInEST(record.created_at, { dateStyle: 'short', timeStyle: 'short' })}</TableCell>
                     <TableCell className="text-sm text-slate-700 font-medium">{record.user_display?.split('@')[0] || 'Unknown'}</TableCell>
                     <TableCell className="font-semibold text-blue-600">{record.type}</TableCell>
                     <TableCell className="font-semibold text-slate-800">{record.control_no}</TableCell>
                     <TableCell className="text-slate-700">{record.wave_no}</TableCell>
-                    <TableCell className="text-slate-700 font-mono text-sm">-</TableCell>
                     <TableCell className="text-center text-slate-700">{record.pallets || 0}</TableCell>
                     <TableCell className="text-center text-slate-700">{record.cartons || 0}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
+            {/* Pagination */}
+            {!isLoading && records.length > PAGE_SIZE && (
+              <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200">
+                <div className="text-xs text-slate-600">
+                  Showing {((currentPage - 1) * PAGE_SIZE) + 1}–{Math.min(currentPage * PAGE_SIZE, records.length)} of {records.length}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="outline" size="sm" disabled={currentPage === 1} onClick={() => setCurrentPage(p => Math.max(1, p - 1))}>
+                    Prev
+                  </Button>
+                  <span className="text-xs text-slate-600">Page {currentPage} of {Math.ceil(records.length / PAGE_SIZE)}</span>
+                  <Button type="button" variant="outline" size="sm" disabled={currentPage >= Math.ceil(records.length / PAGE_SIZE)} onClick={() => setCurrentPage(p => Math.min(Math.ceil(records.length / PAGE_SIZE), p + 1))}>
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -380,7 +422,7 @@ Date: ${new Date().toLocaleString()}
                     <div className="flex justify-between"><span>Shipment Type:</span><span>{confirmData.shipment_type}</span></div>
                     <div className="flex justify-between"><span>Control #:</span><span>{confirmData.control_number}</span></div>
                     <div className="flex justify-between"><span>Wave #:</span><span>{confirmData.wave_number}</span></div>
-                    <div className="flex justify-between"><span>Tracking #:</span><span>{confirmData.tracking_number}</span></div>
+                    {/* Tracking # removed from confirmation */}
                     <div className="flex justify-between"><span>Pallets count:</span><span>{confirmData.pallets}</span></div>
                     <div className="flex justify-between"><span>Cartons count:</span><span>{confirmData.cartons}</span></div>
                 </div>

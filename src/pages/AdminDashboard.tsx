@@ -38,6 +38,12 @@ const StatSkeleton = () => (
     </div>
 );
 
+const toSingular = (type: string) => {
+    if (type === 'BTX') return 'BTX'
+    if (type === 'DockDoors') return 'Dock Door'
+    return type.endsWith('s') ? type.slice(0, -1) : type
+}
+
 export default function AdminDashboardPage() {
     const [user, setUser] = useState(null);
     const [stats, setStats] = useState<Record<string, {
@@ -476,7 +482,7 @@ export default function AdminDashboardPage() {
                                     </div>
                                     <div>
                                         <p className="text-sm font-medium text-slate-800">
-                                            New <span className="font-bold">{item.type.slice(0, -1)}</span> entry by <span className="font-bold">{item.created_by.split('@')[0]}</span>
+                                            New <span className="font-bold">{toSingular(item.type)}</span> entry by <span className="font-bold">{item.created_by.split('@')[0]}</span>
                                         </p>
                                         <p className="text-xs text-slate-500">
                                             {formatInEST(item.created_date)}

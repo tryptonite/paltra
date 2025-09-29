@@ -19,6 +19,7 @@ import { Toaster } from '@/components/ui/toaster';
 
 const navigationItems = [
   { title: 'Admin Dashboard', url: createPageUrl('AdminDashboard'), icon: LayoutDashboard, adminOnly: true },
+  { title: 'Dashboard', url: createPageUrl('Dashboard'), icon: LayoutDashboard, adminOnly: false },
   { title: 'Dock Doors', url: createPageUrl('DockDoors'), icon: Warehouse, adminOnly: false },
   { title: 'Live Loads', url: createPageUrl('LiveLoads'), icon: Truck, adminOnly: false },
   { title: 'Call-Ins', url: createPageUrl('Call-Ins'), icon: Phone, adminOnly: false },

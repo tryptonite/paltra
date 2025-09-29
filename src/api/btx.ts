@@ -62,3 +62,13 @@ export async function getBtxSubmission(submission_id: string) {
   if (error) throw error;
   return data;
 }
+
+/** Delete a whole BTX submission (all lines) by submission_id */
+export async function deleteBtxSubmission(submission_id: string) {
+  const { error } = await supabase
+    .from('btx')
+    .delete()
+    .eq('submission_id', submission_id);
+  if (error) throw error;
+  return { success: true };
+}

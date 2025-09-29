@@ -2,6 +2,36 @@ import { dataClient } from './dataClient'
 import { Dimensions, Profiles, BTXEntries, LiveLoads, CallIns, Truckloads, DockDoors, checkDuplicateControlNumber } from '@/lib/database'
 import { supabase } from '@/lib/supabase'
 
+type CachedUser = {
+  id: string
+  email: string
+  role: string
+  department: string
+  full_name: string
+  company: string
+  is_approved: boolean
+  [key: string]: unknown
+}
+
+const USER_CACHE_TTL_MS = 60 * 60 * 1000 // 1 hour
+let cachedUser: CachedUser | null = null
+let cachedUserFetchedAt = 0
+const USER_AUTH_TIMEOUT_MS = 8000
+
+const setCachedUser = (user: CachedUser | null) => {
+  cachedUser = user
+  cachedUserFetchedAt = user ? Date.now() : 0
+}
+
+const normalizeUserRecord = (user: Partial<CachedUser> & { id: string; email: string }) => ({
+  ...user,
+  role: user.role || 'user',
+  department: user.department || 'unknown',
+  full_name: user.full_name || '',
+  company: user.company || 'Paltra',
+  is_approved: Boolean(user.is_approved),
+}) as CachedUser
+
 // Check if Supabase is properly configured
 export const isSupabaseConfigured = () => {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
@@ -312,48 +342,68 @@ export const Dimension = {
 
 // Create a User API that matches the existing interface
 export const User = {
-  async me() {
+  async me(options?: { forceRefresh?: boolean } | boolean): Promise<CachedUser> {
+    const forceRefresh = typeof options === 'boolean' ? options : options?.forceRefresh ?? false
+
+    const now = Date.now()
+    if (!forceRefresh && cachedUser && now - cachedUserFetchedAt < USER_CACHE_TTL_MS) {
+      return cachedUser
+    }
+
+    if (!isSupabaseConfigured()) {
+      throw new Error('Supabase not configured. Unable to resolve authenticated user.')
+    }
+
     try {
-      if (!isSupabaseConfigured()) {
-        console.warn('Supabase not configured, falling back to local dataClient')
-        return await dataClient.auth.me()
-      }
+      const { data, error } = await withTimeout(supabase.auth.getUser() as PromiseLike<any>, USER_AUTH_TIMEOUT_MS)
+      if (error) throw error
 
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        // Fall back to local auth if no Supabase user
-        return await dataClient.auth.me()
-      }
-
-      // Try to get profile from database
-      try {
-        const profile = await Profiles.read(user.id)
-        return {
-          id: user.id,
-          email: user.email || '',
-          role: profile.role || 'user',
-          department: profile.department || 'unknown',
-          full_name: profile.full_name || '',
-          company: profile.company || 'Paltra',
-          is_approved: profile.is_approved || false
+      const supabaseUser = data?.user
+      if (!supabaseUser) {
+        if (cachedUser) {
+          return cachedUser
         }
+        throw new Error('No authenticated Supabase user session found')
+      }
+
+      let resolvedUser: CachedUser
+
+      try {
+        const profile = await withTimeout(Profiles.read(supabaseUser.id) as PromiseLike<any>, USER_AUTH_TIMEOUT_MS)
+        resolvedUser = normalizeUserRecord({
+          id: supabaseUser.id,
+          email: supabaseUser.email || '',
+          role: profile?.role ?? 'user',
+          department: profile?.department ?? 'unknown',
+          full_name: profile?.full_name ?? supabaseUser.email ?? '',
+          company: profile?.company ?? 'Paltra',
+          is_approved: profile?.is_approved ?? false,
+        })
       } catch (profileError) {
-        // If profile doesn't exist, return basic user info
-        return {
-          id: user.id,
-          email: user.email || '',
+        console.warn('Falling back to auth metadata for user profile:', profileError)
+        resolvedUser = normalizeUserRecord({
+          id: supabaseUser.id,
+          email: supabaseUser.email || '',
           role: 'user',
           department: 'unknown',
-          full_name: '',
+          full_name: supabaseUser.email || '',
           company: 'Paltra',
-          is_approved: false
-        }
+          is_approved: false,
+        })
       }
+
+      setCachedUser(resolvedUser)
+      return resolvedUser
     } catch (error) {
-      console.error('Error getting current user from Supabase, falling back to local data:', error)
-      return await dataClient.auth.me()
+      console.error('Error getting current user from Supabase:', error)
+      setCachedUser(null)
+      throw error
     }
-  }
+  },
+
+  clearCache() {
+    setCachedUser(null)
+  },
 }
 
 // Create a Supabase-compatible API for CallIn that matches the existing interface

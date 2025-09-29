@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
-import { User, Session, AuthError, PostgrestError } from '@supabase/supabase-js'
+import { User as SupabaseUser, Session, AuthError, PostgrestError } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
+import { User as UserApi } from '@/api/entities'
 
 // Simple profile type for testing
 type UserProfile = {
@@ -15,8 +16,11 @@ type UserProfile = {
   updated_at: string
 }
 
+const AUTH_CHECK_INTERVAL_MS = 60 * 60 * 1000
+const SUPABASE_REQUEST_TIMEOUT_MS = 8000
+
 interface AuthContextType {
-  user: User | null
+  user: SupabaseUser | null
   profile: UserProfile | null
   session: Session | null
   loading: boolean
@@ -30,20 +34,79 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   console.log('AuthProvider: Initializing...')
-  const [user, setUser] = useState<User | null>(null)
+  const [user, setUser] = useState<SupabaseUser | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+  const lastAuthCheckRef = React.useRef(0)
 
-  const fetchProfile = React.useCallback(async (userId: string, userEmail?: string) => {
-    console.log('AuthProvider: Fetching profile for user:', userId)
-    
+  const runWithTimeout = React.useCallback(async <T,>(promise: Promise<T>, label: string, ms = SUPABASE_REQUEST_TIMEOUT_MS): Promise<T> => {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) =>
+        setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+      ),
+    ])
+  }, [])
+
+  const markAuthChecked = React.useCallback(() => {
+    lastAuthCheckRef.current = Date.now()
+  }, [])
+
+  const clearSessionState = React.useCallback((reason?: string) => {
+    if (reason) {
+      console.warn(`AuthContext: Clearing session state (${reason})`)
+    }
+    setUser(null)
+    setProfile(null)
+    setSession(null)
+    setLoading(false)
+    UserApi.clearCache()
+    lastAuthCheckRef.current = 0
+  }, [])
+
+  const signOut = React.useCallback(async () => {
+    console.log('AuthContext: Signing out...')
+    let responseError: AuthError | null = null
     try {
-      // Add timeout for profile fetch
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Profile fetch timeout')), 8000)
+      const { error } = await runWithTimeout(supabase.auth.signOut(), 'signOut')
+      if (error) {
+        console.error('AuthContext: Sign out error:', error)
+        responseError = error
+      }
+    } catch (error: any) {
+      console.error('AuthContext: Sign out request failed:', error)
+      responseError = { message: error?.message || 'Sign out request timed out.' } as AuthError
+    } finally {
+      clearSessionState('signOut')
+    }
+    return { error: responseError }
+  }, [runWithTimeout, clearSessionState])
+
+  const fetchProfile = React.useCallback(async (authUser: SupabaseUser) => {
+    const userId = authUser.id
+    const userEmail = authUser.email || ''
+    console.log('AuthProvider: Fetching profile for user:', userId)
+
+    const fallbackProfile: UserProfile = {
+      id: userId,
+      email: userEmail,
+      full_name: (authUser.user_metadata?.full_name as string) || userEmail || null,
+      department: (authUser.user_metadata?.department as string) || null,
+      role: (authUser.user_metadata?.role as string) || 'user',
+      company: (authUser.user_metadata?.company as string) || null,
+      is_approved: typeof authUser.user_metadata?.is_approved === 'boolean'
+        ? (authUser.user_metadata?.is_approved as boolean)
+        : null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+
+    try {
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Profile fetch timeout')), SUPABASE_REQUEST_TIMEOUT_MS)
       )
-      
+
       const profilePromise = supabase
         .from('profiles')
         .select('*')
@@ -53,31 +116,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data, error } = await Promise.race([profilePromise, timeoutPromise]) as any
 
       if (error) {
-        console.error('Error fetching profile:', error)
+        console.error('AuthProvider: Error fetching profile from database:', error)
         if (error.code === '42P01') {
-          console.warn('Profiles table does not exist. Please run the SQL schema in Supabase.')
-          // Create a basic profile from user data if table doesn't exist
+          console.warn('AuthProvider: Profiles table missing. Using auth metadata fallback profile.')
           setProfile({
-            id: userId,
-            email: userEmail || '',
-            full_name: null,
-            department: null,
-            role: 'user',
-            company: null,
-            is_approved: false, // New users need approval
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
+            ...fallbackProfile,
+            role: fallbackProfile.role || 'user',
+            is_approved: fallbackProfile.is_approved ?? false,
           })
         } else {
-          setProfile(null)
+          setProfile((prev) => prev ?? fallbackProfile)
         }
-      } else {
-        setProfile(data)
-        console.log('AuthProvider: Profile loaded successfully')
+        return
       }
+
+      setProfile(data)
+      console.log('AuthProvider: Profile loaded successfully')
     } catch (error) {
-      console.error('Error fetching profile:', error)
-      setProfile(null)
+      console.error('AuthProvider: Failed to fetch profile:', error)
+      setProfile((prev) => prev ?? fallbackProfile)
     } finally {
       console.log('AuthProvider: Setting loading to false')
       setLoading(false)
@@ -126,7 +183,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   detail: { message: 'Your account has been removed by an administrator. You will be signed out.' }
                 }))
               }
-              setTimeout(() => signOut(), 2000) // Delay to show notification
+              setTimeout(() => {
+                signOut()
+              }, 2000) // Delay to show notification
             } else if (payload.eventType === 'UPDATE' && payload.new) {
               // Update local profile state with new data
               const newProfile = payload.new as UserProfile
@@ -147,18 +206,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     
     // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    runWithTimeout(supabase.auth.getSession(), 'getSession').then(({ data: { session }, error }) => {
       if (!mounted) return
       
       console.log('AuthProvider: Initial session:', session?.user?.email || 'No user')
       setSession(session)
       setUser(session?.user ?? null)
+
+      if (error) {
+        console.error('AuthProvider: getSession returned error:', error)
+      }
       
       if (session?.user) {
+        markAuthChecked()
         setupProfileSubscription(session.user.id)
-        fetchProfile(session.user.id, session.user.email || '').finally(() => {
-          if (mounted) clearTimeout(loadingTimeout)
-        })
+        fetchProfile(session.user)
+          .catch((error) => {
+            console.error('AuthProvider: Profile load failed on initial session:', error)
+          })
+          .finally(() => {
+            if (mounted) clearTimeout(loadingTimeout)
+          })
       } else {
         setLoading(false)
         clearTimeout(loadingTimeout)
@@ -177,17 +245,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return
       
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
+        UserApi.clearCache()
+      }
+
       console.log('AuthProvider: Auth state change:', event, session?.user?.email || 'No user')
       setSession(session)
       setUser(session?.user ?? null)
       
       if (session?.user) {
+        markAuthChecked()
         setupProfileSubscription(session.user.id)
         try {
-          await fetchProfile(session.user.id, session.user.email || '')
+          await fetchProfile(session.user)
         } catch (error) {
           console.error('AuthProvider: Error fetching profile on auth change:', error)
           setLoading(false)
+          return
         }
       } else {
         setProfile(null)
@@ -197,6 +271,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           supabase.removeChannel(profileSubscription)
           profileSubscription = null
         }
+        lastAuthCheckRef.current = 0
       }
     })
 
@@ -208,21 +283,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         supabase.removeChannel(profileSubscription)
       }
     }
-  }, []) // Remove fetchProfile dependency to prevent infinite loops
+  }, [fetchProfile, signOut])
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
-    return { error }
+    try {
+      const { error } = await runWithTimeout(
+        supabase.auth.signInWithPassword({
+          email,
+          password,
+        }),
+        'signIn'
+      )
+      return { error }
+    } catch (error: any) {
+      console.error('AuthContext: Sign in request failed:', error)
+      return { error: { message: error?.message || 'Sign in request timed out.' } as AuthError }
+    }
   }
 
   const signUp = async (email: string, password: string, userData: Partial<UserProfile>) => {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-    })
+    let data, error
+    try {
+      const response = await runWithTimeout(
+        supabase.auth.signUp({
+          email,
+          password,
+        }),
+        'signUp'
+      )
+      data = response.data
+      error = response.error
+    } catch (err: any) {
+      console.error('AuthContext: Sign up request failed:', err)
+      return { error: { message: err?.message || 'Sign up request timed out.' } as AuthError }
+    }
 
     if (error) {
       return { error }
@@ -253,7 +347,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         // Fetch the newly created profile
-        await fetchProfile(data.user.id)
+        markAuthChecked()
+        await fetchProfile(data.user as SupabaseUser)
       } catch (error: any) {
         console.error('Unexpected error creating profile:', error)
         return { error: { message: 'Failed to create user profile. Please try again.' } as AuthError }
@@ -263,22 +358,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error: null }
   }
 
-  const signOut = async () => {
-    console.log('AuthContext: Signing out...')
-    const { error } = await supabase.auth.signOut()
-    if (!error) {
-      console.log('AuthContext: Sign out successful, clearing state...')
-      // Clear local state immediately
-      setUser(null)
-      setProfile(null)
-      setSession(null)
-      setLoading(false)
-      console.log('AuthContext: State cleared')
-    } else {
-      console.error('AuthContext: Sign out error:', error)
+  const sessionUser = session?.user || null
+
+  const refreshAuthIfNeeded = React.useCallback(async (force = false) => {
+    if (!sessionUser) {
+      return
     }
-    return { error }
-  }
+
+    const now = Date.now()
+    const needsRefresh = force || now - lastAuthCheckRef.current >= AUTH_CHECK_INTERVAL_MS
+    if (!needsRefresh) {
+      return
+    }
+
+    markAuthChecked()
+
+    try {
+      await UserApi.me({ forceRefresh: true })
+      await fetchProfile(sessionUser)
+    } catch (error) {
+      console.error('AuthProvider: Visibility-triggered auth refresh failed:', error)
+    }
+  }, [sessionUser, fetchProfile, markAuthChecked])
+
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshAuthIfNeeded()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [refreshAuthIfNeeded])
 
   const updateProfile = async (updates: Partial<UserProfile>) => {
     if (!user) {

@@ -103,7 +103,7 @@ export default function Layout({ children, currentPageName }) {
     if (profile?.full_name) {
       return profile.full_name.split(' ').map(name => name[0]).join('').toUpperCase().slice(0, 2);
     }
-    return profile?.email?.[0]?.toUpperCase() || 'U';
+    return profile?.email?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || 'U';
   };
   
   const visibleNavItems = React.useMemo(() => {
@@ -226,7 +226,7 @@ export default function Layout({ children, currentPageName }) {
                         <span className="text-white font-bold text-sm">{getUserInitials(profile)}</span>
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-slate-900 truncate">{profile?.full_name || 'User'}</p>
+                        <p className="text-sm font-semibold text-slate-900 truncate">{profile?.full_name || profile?.email || user?.email || 'Account'}</p>
                         <p className="text-xs text-slate-500 truncate">{profile?.email}</p>
                         <div className="flex items-center flex-wrap gap-2 mt-1.5">
                           {profile?.company && (

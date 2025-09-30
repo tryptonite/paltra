@@ -215,6 +215,7 @@ export interface Database {
           destination_state: string
           total_pieces: number
           weight: number
+          is_preload: boolean | null
           user_role: string
           user_department: string
           created_at: string
@@ -233,6 +234,7 @@ export interface Database {
           destination_state: string
           total_pieces: number
           weight: number
+          is_preload?: boolean | null
           user_role: string
           user_department: string
           created_at?: string
@@ -251,6 +253,7 @@ export interface Database {
           destination_state?: string
           total_pieces?: number
           weight?: number
+          is_preload?: boolean | null
           user_role?: string
           user_department?: string
           created_at?: string

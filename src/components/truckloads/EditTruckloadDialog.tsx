@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -44,6 +45,7 @@ export default function EditTruckloadDialog({ open, onOpenChange, record, onSave
   const [destinationState, setDestinationState] = useState('');
   const [totalPieces, setTotalPieces] = useState('');
   const [weight, setWeight] = useState('');
+  const [isPreload, setIsPreload] = useState(false);
 
   useEffect(() => {
     if (record) {
@@ -58,6 +60,7 @@ export default function EditTruckloadDialog({ open, onOpenChange, record, onSave
       setDestinationState(record.destination_state || '');
       setTotalPieces(record.total_pieces?.toString() || '');
       setWeight(record.weight?.toString() || '');
+      setIsPreload(Boolean(record.is_preload));
     }
   }, [record]);
 
@@ -81,6 +84,7 @@ export default function EditTruckloadDialog({ open, onOpenChange, record, onSave
       destination_state: destinationState,
       total_pieces: Number(totalPieces),
       weight: Number(weight),
+      is_preload: isPreload,
     };
     onSave(record.id, updatedRecord);
     onOpenChange(false); // Close dialog after saving
@@ -138,8 +142,12 @@ export default function EditTruckloadDialog({ open, onOpenChange, record, onSave
           <div>
             <Label htmlFor="editCompanyName" className="text-slate-700 font-medium">Company Name *</Label>
             <Input id="editCompanyName" value={companyName} onChange={(e) => setCompanyName(e.target.value.toUpperCase())} required className="mt-2 rounded-lg border-slate-300 w-full" style={{textTransform: "uppercase"}}/>
+        </div>
+          <div className="flex items-center gap-2">
+            <Checkbox id="edit-is-preload" checked={isPreload} onCheckedChange={(v) => setIsPreload(Boolean(v))} />
+            <Label htmlFor="edit-is-preload" className="text-slate-700 font-medium">Pre-load</Label>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label htmlFor="editDestinationCity" className="text-slate-700 font-medium">Destination City *</Label>
               <Input id="editDestinationCity" value={destinationCity} onChange={(e) => setDestinationCity(e.target.value.toUpperCase())} required className="mt-2 rounded-lg border-slate-300 w-full" />

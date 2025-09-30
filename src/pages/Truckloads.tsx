@@ -76,6 +76,7 @@ export default function TruckloadsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [showConfirm, setShowConfirm] = useState(false);
   const [confirmData, setConfirmData] = useState(null);
+  const [isPreload, setIsPreload] = useState(false);
   const [editingRecord, setEditingRecord] = useState(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   // Removed selectedDateFilter state
@@ -83,6 +84,8 @@ export default function TruckloadsPage() {
   const [selectedPickedUpRecord, setSelectedPickedUpRecord] = useState(null);
   const [isSummaryDialogOpen, setIsSummaryDialogOpen] = useState(false);
   const [summaryData, setSummaryData] = useState({ date: null, truckloads: [] });
+  const [completeConfirmOpen, setCompleteConfirmOpen] = useState(false);
+  const [pendingCompleteRecord, setPendingCompleteRecord] = useState<any | null>(null);
   const { toast } = useToast();
 
   const loadData = async () => {
@@ -90,14 +93,13 @@ export default function TruckloadsPage() {
     try {
       const currentUser = await User.me();
       setUser(currentUser);
-      const [activeData, allCompletedData] = await Promise.all([
-        Truckload.filter({ completed: false }, '-created_date'),
-        Truckload.filter({ completed: true }, '-updated_date')
-      ]);
+      // Fetch all and split client-side to avoid server filter edge cases
+      const allData = await Truckload.list();
+      const activeData = allData.filter((r: any) => r.completed !== true);
       setRecords(activeData);
-      
+
       const oneWeekAgo = subWeeks(new Date(), 1);
-      const recentCompleted = allCompletedData.filter(record => new Date(record.updated_date) > oneWeekAgo);
+      const recentCompleted = allData.filter((r: any) => r.completed === true && new Date(r.updated_date) > oneWeekAgo);
       setCompletedRecords(recentCompleted);
 
     } catch (e) {
@@ -115,6 +117,10 @@ export default function TruckloadsPage() {
     setSummaryData({ date: dateString, truckloads: truckloadsForDay });
     setIsSummaryDialogOpen(true);
   };
+
+  // Distinguish Pre-loads via explicit flag
+  const activeRecords = records.filter(r => !r.is_preload)
+  const preloadRecords = records.filter(r => r.is_preload)
 
   // filteredRecords is no longer needed as there's no filter for the active table
   // const filteredRecords = selectedDateFilter 
@@ -170,6 +176,7 @@ export default function TruckloadsPage() {
         total_pieces: Number(totalPieces),
         weight: Number(weight),
         completed: false,
+        is_preload: isPreload,
       };
       setConfirmData(data);
       setShowConfirm(true);
@@ -194,6 +201,7 @@ export default function TruckloadsPage() {
           total_pieces: confirmData.total_pieces,
           weight: confirmData.weight,
           completed: confirmData.completed,
+          is_preload: confirmData.is_preload,
           user_role: user.role,
           user_department: user.department,
       });
@@ -209,6 +217,7 @@ export default function TruckloadsPage() {
       setDestinationState('');
       setTotalPieces('');
       setWeight('');
+      setIsPreload(false);
       setConfirmData(null);
       await loadData();
 
@@ -243,6 +252,11 @@ export default function TruckloadsPage() {
     setIsLoading(false);
   };
 
+  const requestComplete = (record: any) => {
+    setPendingCompleteRecord(record);
+    setCompleteConfirmOpen(true);
+  };
+
   const handleEdit = (record) => {
     setDetailsRecord(null); // Close details dialog
     setEditingRecord(record);
@@ -275,6 +289,10 @@ export default function TruckloadsPage() {
                 <Truck className="h-5 w-5 text-blue-600" />
               </div>
               New Truckload
+              <div className="ml-auto flex items-center gap-2">
+                <Checkbox id="is-preload" checked={isPreload} onCheckedChange={(v) => setIsPreload(Boolean(v))} />
+                <Label htmlFor="is-preload" className="text-slate-700 font-medium">Pre-load</Label>
+              </div>
             </CardTitle>
             <CardDescription className="text-slate-600">Enter truckload details</CardDescription>
           </CardHeader>
@@ -477,7 +495,7 @@ export default function TruckloadsPage() {
             className="bg-gradient-to-r from-slate-50 to-slate-100 rounded-t-2xl"
           >
             <CardTitle className="text-slate-800">
-              Active Truckloads
+              Live Truckloads
             </CardTitle>
             <CardDescription className="text-slate-600 mt-1">
               Click a row for details.
@@ -503,8 +521,8 @@ export default function TruckloadsPage() {
               </TableHeader>
               <TableBody>
                 {isLoading && <TableRow><TableCell colSpan="12" className="text-center py-8 text-slate-500">Loading...</TableCell></TableRow>}
-                {!isLoading && records.length === 0 && <TableRow><TableCell colSpan="12" className="text-center py-8 text-slate-500">No active truckloads found.</TableCell></TableRow>}
-                {records.map(record => ( // Changed from filteredRecords.map
+                {!isLoading && activeRecords.length === 0 && <TableRow><TableCell colSpan="12" className="text-center py-8 text-slate-500">No active truckloads found.</TableCell></TableRow>}
+                {activeRecords.map(record => (
                   <TableRow key={record.id} onClick={() => setDetailsRecord(record)} className="hover:bg-slate-100 transition-colors border-slate-100 cursor-pointer">
                     <TableCell className="text-sm text-slate-700 font-medium">{format(new Date(record.pickup_date + 'T00:00:00'), 'MM/dd/yyyy')}</TableCell>
                     <TableCell className="text-sm text-slate-700">{record.department}</TableCell>
@@ -517,14 +535,11 @@ export default function TruckloadsPage() {
                     <TableCell className="text-center text-slate-700">{record.total_pieces}</TableCell>
                     <TableCell className="text-center text-slate-700">{record.weight}</TableCell>
                     <TableCell className="text-center">
-                      <Checkbox 
-                          onCheckedChange={(checked) => {
-                              if (checked) {
-                                  handleComplete(record.id);
-                              }
-                          }} 
-                          className="data-[state=checked]:bg-green-600 data-[state=checked]:border-green-600" 
-                          onClick={(e) => e.stopPropagation()}
+                      <Checkbox
+                        checked={false}
+                        onCheckedChange={() => requestComplete(record)}
+                        className="data-[state=checked]:bg-green-600 data-[state=checked]:border-green-600"
+                        onClick={(e) => { e.stopPropagation(); requestComplete(record); }}
                       />
                     </TableCell>
                      <TableCell className="text-center">
@@ -546,6 +561,75 @@ export default function TruckloadsPage() {
             </Table>
           </CardContent>
         </Card> 
+
+      {/* Pre-loads (future pickup dates) */}
+      <Card className="border-slate-200 shadow-lg rounded-2xl">
+        <CardHeader className="bg-gradient-to-r from-amber-50 to-yellow-50 rounded-t-2xl">
+          <CardTitle className="flex items-center gap-2 text-amber-800"><Truck/> Pre-loads</CardTitle>
+          <CardDescription className="text-amber-700">Truckloads staged for a future pickup date.</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow className="border-slate-200">
+                <TableHead className="text-slate-600 font-medium w-28">Pickup Date</TableHead>
+                <TableHead className="text-slate-600 font-medium w-16">Dept</TableHead>
+                <TableHead className="text-slate-600 font-medium w-20">Ship Via</TableHead>
+                <TableHead className="text-slate-600 font-medium w-24">PO #s</TableHead>
+                <TableHead className="text-slate-600 font-medium w-28">Control #s</TableHead>
+                <TableHead className="text-slate-600 font-medium w-16">Wave #</TableHead>
+                <TableHead className="text-slate-600 font-medium w-28">Company Name</TableHead>
+                <TableHead className="text-slate-600 font-medium w-24">Destination</TableHead>
+                <TableHead className="text-center text-slate-600 font-medium w-16">Pieces</TableHead>
+                <TableHead className="text-center text-slate-600 font-medium w-16">Weight</TableHead>
+                <TableHead className="text-center text-slate-600 font-medium w-20">Completed</TableHead>
+                <TableHead className="text-center text-slate-600 font-medium w-16">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading && <TableRow><TableCell colSpan="12" className="text-center py-8 text-slate-500">Loading...</TableCell></TableRow>}
+              {!isLoading && preloadRecords.length === 0 && <TableRow><TableCell colSpan="12" className="text-center py-8 text-slate-500">No pre-loads.</TableCell></TableRow>}
+              {preloadRecords.map(record => (
+                <TableRow key={record.id} onClick={() => setDetailsRecord(record)} className="hover:bg-amber-50/60 transition-colors border-slate-100 cursor-pointer">
+                  <TableCell className="text-sm text-slate-700 font-medium">
+                    {format(new Date(record.pickup_date + 'T00:00:00'), 'MM/dd/yyyy')}
+                  </TableCell>
+                  <TableCell className="text-sm text-slate-700">{record.department}</TableCell>
+                  <TableCell className="text-sm text-slate-700">{record.ship_via}</TableCell>
+                  <TableCell className="text-slate-700">{record.po_numbers?.join(', ')}</TableCell>
+                  <TableCell className="font-semibold text-slate-800">{record.control_numbers?.join(', ')}</TableCell>
+                  <TableCell className="text-slate-700">{record.wave_number}</TableCell>
+                  <TableCell className="text-slate-700">{record.company_name}</TableCell>
+                  <TableCell className="text-slate-700">{record.destination_city}, {record.destination_state}</TableCell>
+                  <TableCell className="text-center text-slate-700">{record.total_pieces}</TableCell>
+                  <TableCell className="text-center text-slate-700">{record.weight}</TableCell>
+                  <TableCell className="text-center">
+                    <Checkbox
+                      checked={false}
+                      onCheckedChange={() => requestComplete(record)}
+                      className="data-[state=checked]:bg-green-600 data-[state=checked]:border-green-600"
+                      onClick={(e) => { e.stopPropagation(); requestComplete(record); }}
+                    />
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        onClick={(e) => { 
+                            e.stopPropagation(); 
+                            handleEdit(record); 
+                        }} 
+                        className="text-slate-500 hover:text-blue-600"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
       <Card className="border-slate-200 shadow-lg rounded-2xl">
           <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-t-2xl">
@@ -589,7 +673,38 @@ export default function TruckloadsPage() {
             </Table>
           </CardContent>
         </Card>
-        
+
+        {/* Confirm completion dialog */}
+        <Dialog open={completeConfirmOpen} onOpenChange={setCompleteConfirmOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Mark as Picked Up?</DialogTitle>
+              <DialogDescription>
+                This will move the truckload to the Picked Up section.
+              </DialogDescription>
+            </DialogHeader>
+            {pendingCompleteRecord && (
+              <div className="space-y-2 py-2 text-sm">
+                <div className="flex justify-between"><span className="text-slate-600">Pickup Date:</span><span className="font-medium text-slate-800">{format(new Date(pendingCompleteRecord.pickup_date + 'T00:00:00'), 'PPP')}</span></div>
+                <div className="flex justify-between"><span className="text-slate-600">Ship Via:</span><span className="text-slate-800">{pendingCompleteRecord.ship_via}</span></div>
+                <div className="flex justify-between"><span className="text-slate-600">Control #s:</span><span className="text-slate-800">{pendingCompleteRecord.control_numbers?.join(', ')}</span></div>
+                <div className="flex justify-between"><span className="text-slate-600">PO #s:</span><span className="text-slate-800">{pendingCompleteRecord.po_numbers?.join(', ')}</span></div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setCompleteConfirmOpen(false); setPendingCompleteRecord(null); }}>Cancel</Button>
+              <Button className="bg-green-600 hover:bg-green-700" onClick={async () => {
+                if (pendingCompleteRecord) {
+                  setCompleteConfirmOpen(false);
+                  const id = pendingCompleteRecord.id;
+                  setPendingCompleteRecord(null);
+                  await handleComplete(id);
+                }
+              }}>Mark Completed</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <Dialog open={showConfirm} onOpenChange={setShowConfirm}>
             <DialogContent className="sm:max-w-md">
                 <DialogHeader>

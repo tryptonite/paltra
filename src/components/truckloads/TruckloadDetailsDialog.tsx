@@ -29,6 +29,7 @@ export default function TruckloadDetailsDialog({ record, open, onOpenChange, onE
         </DialogHeader>
         <div className="space-y-3 py-4 text-sm">
             <div className="flex justify-between items-center"><span className="font-medium text-slate-600">Pickup Date:</span><span className="text-slate-800 font-semibold">{format(new Date(record.pickup_date + 'T00:00:00'), 'PPP')}</span></div>
+            <div className="flex justify-between items-center"><span className="font-medium text-slate-600">Pre-load:</span><span className="text-slate-800">{record.is_preload ? 'Yes' : 'No'}</span></div>
             <div className="flex justify-between items-center"><span className="font-medium text-slate-600">Department:</span><span className="text-slate-800">{record.department}</span></div>
             <div className="flex justify-between items-center"><span className="font-medium text-slate-600">Ship Via:</span><span className="text-slate-800">{record.ship_via}</span></div>
             <div className="flex justify-between items-center"><span className="font-medium text-slate-600">Control Numbers:</span><span className="text-slate-800">{record.control_numbers?.join(', ')}</span></div>

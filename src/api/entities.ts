@@ -1077,7 +1077,7 @@ export const Truckload = {
       const resp: any = await withTimeout(
         supabase
           .from('v_truckloads')
-          .select('id,pickup_date,department,ship_via,po_numbers,control_numbers,wave_no,company_name,destination,pieces,weight_lbs,is_completed,completed_at,user_display')
+          .select('*')
           .order('pickup_date', { ascending: true })
           .limit(300) as any,
         2500
@@ -1096,7 +1096,8 @@ export const Truckload = {
         weight: record.weight_lbs,
         destination_city: record.destination?.split(', ')[0] || record.destination,
         destination_state: record.destination?.split(', ')[1] || '',
-        completed: record.is_completed
+        completed: record.is_completed,
+        is_preload: Boolean((record as any).is_preload)
       }))
       return data_mapped
     } catch (error) {
@@ -1113,10 +1114,19 @@ export const Truckload = {
 
       let query = supabase
         .from('v_truckloads')
-        .select('id,pickup_date,department,ship_via,po_numbers,control_numbers,wave_no,company_name,destination,pieces,weight_lbs,is_completed,completed_at,user_display')
+        .select('*')
 
       if (criteria.completed !== undefined) {
-        query = query.eq('is_completed', criteria.completed)
+        if (criteria.completed === false) {
+          // Treat NULL as not yet completed
+          query = query.or('is_completed.is.false,is_completed.is.null')
+        } else {
+          query = query.eq('is_completed', true)
+        }
+      }
+
+      if ((criteria as any).is_preload !== undefined) {
+        query = query.eq('is_preload', (criteria as any).is_preload)
       }
 
       if (criteria.completed === false) {
@@ -1145,7 +1155,8 @@ export const Truckload = {
         weight: record.weight_lbs,
         destination_city: record.destination?.split(', ')[0] || record.destination,
         destination_state: record.destination?.split(', ')[1] || '',
-        completed: record.is_completed
+        completed: record.is_completed,
+        is_preload: Boolean((record as any).is_preload)
       }))
       return data_mapped
     } catch (error) {
@@ -1163,7 +1174,7 @@ export const Truckload = {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error("User not authenticated")
 
-      const dbPayload = {
+      const dbPayload: any = {
         pickup_date: payload.pickup_date,
         department: payload.department,
         ship_via: payload.ship_via,
@@ -1178,11 +1189,13 @@ export const Truckload = {
         submitted_by: user.id
       }
 
+      if (typeof (payload as any).is_preload === 'boolean') {
+        dbPayload.is_preload = (payload as any).is_preload
+      }
+
       const { data, error } = await supabase
         .from('truckloads')
         .insert(dbPayload)
-        .select()
-        .single()
 
       if (error) throw error
       return data
@@ -1224,6 +1237,10 @@ export const Truckload = {
           dbPayload.completed_at = new Date().toISOString()
         }
         delete dbPayload.completed
+      }
+
+      if ((payload as any).is_preload !== undefined) {
+        dbPayload.is_preload = (payload as any).is_preload
       }
 
       const { error } = await supabase

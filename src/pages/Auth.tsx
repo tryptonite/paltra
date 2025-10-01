@@ -36,6 +36,9 @@ export default function AuthPage() {
     }
   }
 
+  const supportEmail = (import.meta as any).env?.VITE_SUPPORT_EMAIL as string | undefined
+  const supportMailto = `mailto:${supportEmail || 'admin@example.com'}?subject=${encodeURIComponent('Paltra access help')}`
+
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-lg w-full max-w-md p-8">
@@ -131,11 +134,14 @@ export default function AuthPage() {
           </button>
         </div>*/}
         
-        {/* Owner Contact Info */}
+        {/* Help / Support Footer */}
         <div className="mt-6 text-center text-xs text-gray-500">
-          <p>Forgot your password?</p> 
-          <p>Need an Account?</p>
-          <p>Contact your administrator.</p>
+          <p>
+            Trouble signing in? Resetting your password or creating a new account is handled by your administrator.{' '}
+          </p>
+          <p className="font-semibold">
+            Contact your administrator for help.
+          </p>
         </div>
       </div>
     </div>

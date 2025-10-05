@@ -456,21 +456,20 @@ export const CallIn = {
 
       let query = supabase
         .from('v_callins')
-        .select('id,submitted_at,carrier,ready_time,trailer_no,dock,user_display')
+        .select('id,submitted_at,carrier,ready_time,trailer_no,dock,user_display,submitted_date_est')
 
       if (criteria.carrier) {
         query = query.eq('carrier', criteria.carrier)
       }
       
-      // Handle date range filtering
+      // Filter by EST-local date using the generated submitted_date_est column
       if (criteria.selectedDate) {
         const sel = new Date(criteria.selectedDate)
-        const start = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate())
-        const end = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate() + 1)
-        
-        query = query
-          .gte('submitted_at', start.toISOString())
-          .lt('submitted_at', end.toISOString())
+        const yyyy = sel.getFullYear()
+        const mm = String(sel.getMonth() + 1).padStart(2, '0')
+        const dd = String(sel.getDate()).padStart(2, '0')
+        const estDate = `${yyyy}-${mm}-${dd}`
+        query = query.eq('submitted_date_est', estDate)
       }
 
       const resp: any = await withTimeout(query.order('submitted_at', { ascending: true }) as any, 2500)

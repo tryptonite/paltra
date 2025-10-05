@@ -11,11 +11,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { Phone, Calendar as CalendarIcon, Filter } from 'lucide-react';
+import { Phone, Calendar as CalendarIcon, Filter, Check } from 'lucide-react';
 import moment from 'moment';
 import { format } from 'date-fns';
 import { useToast } from "@/components/ui/use-toast";
 import { ToastAction } from "@/components/ui/toast";
+import { getEmailsForCarrier, envKeySuffixForCarrier } from '@/utils/carrierEmails';
 
 const CARRIERS = ['AAA', 'ABF', 'AVR', 'CEN', 'ESTES', 'FEF', 'OLD', 'R&L', 'SAIA', 'SEF', 'T-FORCE', 'WARD', 'XPO'];
 
@@ -76,43 +77,38 @@ export default function CallInsPage() {
   const [carrierFilter, setCarrierFilter] = useState('all');
   const { user, profile } = useAuth();
   const { toast } = useToast();
+  const [showCopyDialog, setShowCopyDialog] = useState(false);
+  const [copyData, setCopyData] = useState<{ to: string[]; sentence: string; carrier: string } | null>(null);
+  const [copied, setCopied] = useState<{ email: boolean; message: boolean }>({ email: false, message: false });
 
   const timeOptions = generateTimeOptions();
 
   useEffect(() => {
+    let cancelled = false
     const loadData = async () => {
-      if (!user) return;
-      
-      setIsLoading(true);
+      if (!user) return
+      setIsLoading(true)
       try {
-        // Filter records by selected date and carrier
         const criteria = {
-          selectedDate: selectedDate,
-          carrier: carrierFilter === 'all' ? null : carrierFilter
-        };
-        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-          console.warn('CallIns: offline, skipping refresh and keeping previous results');
-        } else {
-          const data = await CallIn.filter(criteria);
-          console.log('Fetched filtered call-ins data:', data);
-          // Ensure newest first on the page
-          const sorted = [...(data || [])].sort((a, b) => new Date(b.submitted_at || b.created_date).getTime() - new Date(a.submitted_at || a.created_date).getTime());
-          // Only clear table when we truly have no results for this date/carrier; otherwise keep last good
-          if (sorted.length > 0) {
-            setRecords(sorted);
-          } else if (records.length === 0) {
-            setRecords(sorted);
-          } else {
-            console.warn('CallIns: empty refresh; keeping previous table contents');
-          }
+          selectedDate,
+          carrier: carrierFilter === 'all' ? null : carrierFilter,
         }
-        setCurrentPage(1);
-      } catch(e) {
-        console.error("Failed to load data", e);
+        const data = await CallIn.filter(criteria)
+        if (cancelled) return
+        const sorted = [...(data || [])].sort(
+          (a, b) => new Date(b.submitted_at || b.created_date).getTime() - new Date(a.submitted_at || a.created_date).getTime()
+        )
+        // Always reflect the current filter selection, even if empty
+        setRecords(sorted)
+        setCurrentPage(1)
+      } catch (e) {
+        if (!cancelled) console.error('Failed to load data', e)
+      } finally {
+        if (!cancelled) setIsLoading(false)
       }
-      setIsLoading(false);
-    };
-    loadData();
+    }
+    loadData()
+    return () => { cancelled = true }
   }, [user, selectedDate, carrierFilter]);
 
   const fetchRecords = async () => {
@@ -395,7 +391,17 @@ export default function CallInsPage() {
               {isLoading && <TableRow><TableCell colSpan="6" className="text-center py-8 text-slate-500">Loading...</TableCell></TableRow>}
               {!isLoading && filteredRecords.length === 0 && <TableRow><TableCell colSpan="6" className="text-center py-8 text-slate-500">No call-ins found for this date.</TableCell></TableRow>}
               {filteredRecords.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE).map(record => (
-                <TableRow key={record.id} className="hover:bg-slate-50 transition-colors border-slate-100">
+                <TableRow
+                  key={record.id}
+                  className="hover:bg-slate-50 transition-colors border-slate-100 cursor-pointer"
+                  onClick={() => {
+                    const to = getEmailsForCarrier(record.carrier)
+                    const sentence = `${record.carrier} trailer ${record.trailer_no} ready at ${record.ready_time?.substring(0,5)}.`
+                    setCopyData({ to, sentence, carrier: record.carrier })
+                    setCopied({ email: false, message: false })
+                    setShowCopyDialog(true)
+                  }}
+                >
                   <TableCell className="text-sm text-slate-600">{formatInEST(record.submitted_at, { dateStyle: 'short', timeStyle: 'short' })}</TableCell>
                   <TableCell className="text-sm text-slate-700">{(record.profile as any)?.full_name || 'N/A'}</TableCell>
                   <TableCell className="font-medium text-slate-800">{record.carrier}</TableCell>
@@ -426,6 +432,72 @@ export default function CallInsPage() {
         </CardContent>
       </Card>
       
+      {/* Copy Call-In dialog (centered) */}
+      <Dialog open={showCopyDialog} onOpenChange={setShowCopyDialog}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Call-In Details</DialogTitle>
+            <DialogDescription>
+              Use the buttons to copy text for your email.
+            </DialogDescription>
+          </DialogHeader>
+          {copyData && (
+            <div className="space-y-3 py-2 text-sm">
+              <div className="flex items-start gap-2">
+                <div className="min-w-[120px] text-slate-600">Send to Email:</div>
+                <div className="flex-1 text-slate-800 whitespace-nowrap overflow-x-auto">{copyData.to.join('; ') || 'Not configured'}</div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={copyData.to.length === 0}
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(copyData.to.join('; '))
+                      setCopied((c) => ({ ...c, email: true }))
+                      setTimeout(() => setCopied((c) => ({ ...c, email: false })), 2000)
+                    } catch {}
+                  }}
+                >
+                  {copied.email ? <Check className="h-4 w-4 text-green-600" /> : 'Copy'}
+                </Button>
+              </div>
+              {copyData.to.length === 0 && (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+                  No email configured for {copyData.carrier}. Set one of:
+                  <div className="mt-1 text-xs text-amber-900">
+                    - VITE_CARRIER_EMAIL_MAP JSON entry for "{copyData.carrier}"<br/>
+                    - VITE_CALLIN_EMAIL_TO_{envKeySuffixForCarrier(copyData.carrier)}=<span className="select-all">someone@company.com</span><br/>
+                    - fallback VITE_CALLIN_EMAIL_TO
+                  </div>
+                </div>
+              )}
+              <div className="flex items-start gap-2">
+                <div className="min-w-[120px] text-slate-600">Message:</div>
+                <div className="flex-1 break-words text-slate-800">{copyData.sentence}</div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(copyData.sentence)
+                      setCopied((c) => ({ ...c, message: true }))
+                      setTimeout(() => setCopied((c) => ({ ...c, message: false })), 2000)
+                    } catch {}
+                  }}
+                >
+                  {copied.message ? <Check className="h-4 w-4 text-green-600" /> : 'Copy'}
+                </Button>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="sm:justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setShowCopyDialog(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={showConfirm} onOpenChange={setShowConfirm}>
         <DialogContent className="sm:max-w-md">
             <DialogHeader>

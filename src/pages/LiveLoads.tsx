@@ -10,12 +10,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { Truck, Clock, User as UserIcon, ChevronLeft, ChevronRight, Calculator } from 'lucide-react';
+import { Truck, Clock, User as UserIcon, ChevronLeft, ChevronRight, Calculator, Check } from 'lucide-react';
 import { isAfter, subDays } from 'date-fns';
 import moment from 'moment';
 import SpaceCalculator from '../components/liveloads/SpaceCalculator';
 import { useToast } from "@/components/ui/use-toast";
 import { ToastAction } from "@/components/ui/toast";
+import { getEmailsForCarrier, envKeySuffixForCarrier } from '@/utils/carrierEmails';
 
 const CARRIERS = ['AAA', 'ABF', 'AVR', 'CEN', 'ESTES', 'FEF', 'OLD', 'R&L', 'SAIA', 'SEF', 'T-FORCE', 'WARD', 'XPO'];
 
@@ -59,6 +60,9 @@ export default function LiveLoadsPage() {
   const [confirmData, setConfirmData] = useState(null);
   const [selectedCarrierForCalc, setSelectedCarrierForCalc] = useState(null);
   const { toast } = useToast();
+  const [showCopyDialog, setShowCopyDialog] = useState(false);
+  const [copyData, setCopyData] = useState<{ to: string[]; sentence: string; carrier: string } | null>(null);
+  const [copied, setCopied] = useState<{ email: boolean; message: boolean }>({ email: false, message: false });
 
   const ITEMS_PER_PAGE = 5;
   const totalPages = Math.ceil(todaysLoads.length / ITEMS_PER_PAGE);
@@ -490,7 +494,18 @@ export default function LiveLoadsPage() {
                 <TableRow 
                   key={summary.carrier} 
                   className={`cursor-pointer transition-colors duration-200 ${selectedCarrierForCalc?.carrier === summary.carrier ? 'bg-purple-200 hover:bg-purple-200/80' : 'hover:bg-slate-100'}`}
-                  onClick={() => setSelectedCarrierForCalc(summary)}
+                  onClick={() => {
+                    setSelectedCarrierForCalc(summary)
+                    const to = getEmailsForCarrier(summary.carrier)
+                    const standardPallets = (summary.ps_total || 0) + (summary.avd_total || 0) + (summary.fitting_total || 0)
+                    const racewayPallets = summary.raceway_total || 0
+                    const racewaySpots = racewayPallets > 0 ? (Math.ceil(racewayPallets / 3) * 3) : 0
+                    const totalSpots = standardPallets + racewaySpots
+                    const sentence = `We need ${totalSpots} spots today.`
+                    setCopyData({ to, sentence, carrier: summary.carrier })
+                    setCopied({ email: false, message: false })
+                    setShowCopyDialog(true)
+                  }}
                 >
                   <TableCell className="font-medium">{summary.carrier}</TableCell>
                   <TableCell className="text-center">{summary.ps_total}</TableCell>
@@ -507,6 +522,66 @@ export default function LiveLoadsPage() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Centered copy dialog like Call-Ins */}
+      <Dialog open={showCopyDialog} onOpenChange={setShowCopyDialog}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Live Load Details</DialogTitle>
+            <DialogDescription>Use the buttons to copy text for your email.</DialogDescription>
+          </DialogHeader>
+          {copyData && (
+            <div className="space-y-3 py-2 text-sm">
+              <div className="flex items-start gap-2">
+                <div className="min-w-[120px] text-slate-600">Send to Email:</div>
+                <div className="flex-1 text-slate-800 whitespace-nowrap overflow-x-auto">{copyData.to.join('; ') || 'Not configured'}</div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={copyData.to.length === 0}
+                  onClick={async () => {
+                    try { await navigator.clipboard.writeText(copyData.to.join('; ')) } catch {}
+                    setCopied((c) => ({ ...c, email: true }))
+                    setTimeout(() => setCopied((c) => ({ ...c, email: false })), 2000)
+                  }}
+                >
+                  {copied.email ? <Check className="h-4 w-4 text-green-600" /> : 'Copy'}
+                </Button>
+              </div>
+              {copyData.to.length === 0 && (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+                  No email configured for {copyData.carrier}. Set one of:
+                  <div className="mt-1 text-xs text-amber-900">
+                    - VITE_CARRIER_EMAIL_MAP JSON entry for "{copyData.carrier}"<br/>
+                    - VITE_CALLIN_EMAIL_TO_{envKeySuffixForCarrier(copyData.carrier)}=<span className="select-all">someone@company.com</span><br/>
+                    - fallback VITE_CALLIN_EMAIL_TO
+                  </div>
+                </div>
+              )}
+              <div className="flex items-start gap-2">
+                <div className="min-w-[120px] text-slate-600">Message:</div>
+                <div className="flex-1 break-words text-slate-800">{copyData.sentence}</div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    try { await navigator.clipboard.writeText(copyData.sentence) } catch {}
+                    setCopied((c) => ({ ...c, message: true }))
+                    setTimeout(() => setCopied((c) => ({ ...c, message: false })), 2000)
+                  }}
+                >
+                  {copied.message ? <Check className="h-4 w-4 text-green-600" /> : 'Copy'}
+                </Button>
+              </div>
+          </div>
+          )}
+          <DialogFooter className="sm:justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setShowCopyDialog(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Card>
         <CardHeader>

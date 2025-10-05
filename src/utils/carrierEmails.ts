@@ -15,7 +15,12 @@ const loadMapFromJson = (): EmailMap | null => {
   const raw = (import.meta as any).env?.VITE_CARRIER_EMAIL_MAP as string | undefined
   if (!raw) return null
   try {
-    const parsed = JSON.parse(raw) as EmailMap
+    // Allow users to wrap the JSON in single quotes in .env files / dashboards
+    let text = raw.trim()
+    if ((text.startsWith("'") && text.endsWith("'")) || (text.startsWith("`") && text.endsWith("`"))) {
+      text = text.slice(1, -1)
+    }
+    const parsed = JSON.parse(text) as EmailMap
     return parsed || null
   } catch (e) {
     console.warn('VITE_CARRIER_EMAIL_MAP is not valid JSON')
@@ -41,4 +46,3 @@ export const getEmailsForCarrier = (carrier: string): string[] => {
 }
 
 export const envKeySuffixForCarrier = (carrier: string): string => sanitizeKey(carrier)
-

@@ -1282,7 +1282,10 @@ export const DockDoor = {
     const statusMap = {
       'available': 'Available',
       'loading': 'Loading',
-      'out_of_service': 'Out-of-service'
+      'occupied': 'Loading',
+      'out_of_service': 'Out-of-service',
+      'out-of-service': 'Out-of-service',
+      'maintenance': 'Out-of-service'
     };
     return statusMap[dbStatus as keyof typeof statusMap] || dbStatus;
   },
@@ -1292,7 +1295,7 @@ export const DockDoor = {
     const statusMap = {
       'Available': 'available',
       'Loading': 'loading',
-      'Out-of-service': 'out_of-service'
+      'Out-of-service': 'out_of_service'
     };
     return statusMap[uiStatus as keyof typeof statusMap] || uiStatus;
   },
@@ -1436,12 +1439,28 @@ export const DockDoor = {
           ? { status: dbStatus, carrier: carrierVal, trailer: trailerVal }
           : { status: dbStatus, carrier: null, trailer: null };
 
-      const { data, error } = await supabase
-        .from('dock_doors')
-        .update(patch)
-        .eq('id', Number(id))              // or .eq('door_number', Number(id))
-        .select()
-        .single();
+      // Attempt update; if legacy constraint rejects value, try fallback synonyms
+      const doUpdate = async (statusValue: string) => {
+        const attemptPatch = statusValue === 'loading'
+          ? { status: statusValue, carrier: carrierVal, trailer: trailerVal }
+          : { status: statusValue, carrier: null, trailer: null };
+        return await supabase
+          .from('dock_doors')
+          .update(attemptPatch)
+          .eq('id', id)
+          .select()
+          .single();
+      };
+
+      let { data, error } = await doUpdate(dbStatus);
+      if (error && (error.code === '23514' || error.code === '22P02' || /constraint|enum/i.test(error.message || ''))) {
+        const fallback = dbStatus === 'out-of-service' || dbStatus === 'out_of_service'
+          ? 'maintenance'
+          : (dbStatus === 'loading' ? 'occupied' : dbStatus);
+        const second = await doUpdate(fallback);
+        data = second.data;
+        error = second.error;
+      }
 
       if (error) throw error;
 

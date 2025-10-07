@@ -166,6 +166,8 @@ export default function AdminDashboardPage() {
                 dateColumn: 'created_at' | 'submitted_at' | 'created_time' | 'pickup_date' = 'created_at',
                 buildQuery?: (dateColumn: string) => any
             ) => {
+                // Pretty display name for section headers: strip v_ prefix; underscores -> spaces; uppercase
+                const displayName = tableName.replace(/^v_/i, '').replace(/_/g, ' ').toUpperCase();
                 let query = buildQuery ? buildQuery(dateColumn) : supabase.from(tableName).select('*');
                 if (exportStartDate) query = query.gte(dateColumn, exportStartDate.toISOString());
                 if (exportEndDate) {
@@ -178,15 +180,15 @@ export default function AdminDashboardPage() {
                 const { data, error } = await query;
                 if (error) {
                     console.error(`Error fetching ${tableName}:`, error);
-                    csvContent += `\nERROR FETCHING ${tableName.toUpperCase()}: ${error.message}\n`;
+                    csvContent += `\nERROR FETCHING ${displayName}: ${error.message}\n`;
                     return;
                 }
                 if (!data || data.length === 0) {
-                    csvContent += `\n${tableName.toUpperCase()}\nNo data found for this period.\n\n`;
+                    csvContent += `\n${displayName}\nNo data found for this period.\n\n`;
                     return;
                 }
 
-                csvContent += `\n${tableName.toUpperCase()}\n`;
+                csvContent += `\n${displayName}\n`;
                 csvContent += `${csvHeaders}\n`;
                 data.forEach(item => {
                     csvContent += `${dataMapper(item)}\n`;

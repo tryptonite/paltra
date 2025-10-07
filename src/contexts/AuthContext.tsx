@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import { User as SupabaseUser, Session, AuthError, PostgrestError } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
-import { User as UserApi } from '@/api/entities'
+import { User as UserApi, isSupabaseConfigured } from '@/api/entities'
 
 // Simple profile type for testing
 type UserProfile = {
@@ -17,7 +17,7 @@ type UserProfile = {
 }
 
 const AUTH_CHECK_INTERVAL_MS = 60 * 60 * 1000
-const SUPABASE_REQUEST_TIMEOUT_MS = 8000
+const SUPABASE_REQUEST_TIMEOUT_MS = Number((import.meta as any).env?.VITE_PROFILE_FETCH_TIMEOUT_MS) || 8000
 // Disable visibility-based auth refresh by default to avoid noisy tab-switch fetches
 const VISIBILITY_REFRESH_ENABLED = (import.meta as any).env?.VITE_VISIBILITY_AUTH_REFRESH === 'true'
 
@@ -107,6 +107,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
+      // If Supabase env is not configured, immediately fall back to auth metadata
+      if (!isSupabaseConfigured()) {
+        console.warn('AuthProvider: Supabase not configured. Using auth metadata for profile.')
+        setProfile(fallbackProfile)
+        return
+      }
+
+      // Avoid aggressive fetch when offline
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        console.warn('AuthProvider: Offline. Using fallback profile until online.')
+        setProfile(prev => prev ?? fallbackProfile)
+        return
+      }
+
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Profile fetch timeout')), SUPABASE_REQUEST_TIMEOUT_MS)
       )
@@ -115,7 +129,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .from('profiles')
         .select('*')
         .eq('id', userId)
-        .single()
+        .maybeSingle()
 
       const { data, error } = await Promise.race([profilePromise, timeoutPromise]) as any
 
@@ -134,11 +148,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return
       }
 
-      setProfile(data)
-      console.log('AuthProvider: Profile loaded successfully')
+      if (!data) {
+        console.warn('AuthProvider: No profile row found. Using auth metadata fallback profile.')
+        setProfile(fallbackProfile)
+      } else {
+        setProfile(data)
+        console.log('AuthProvider: Profile loaded successfully')
+      }
     } catch (error) {
-      console.error('AuthProvider: Failed to fetch profile:', error)
+      // Downgrade to warning if it's specifically a timeout; set fallback immediately
+      const isTimeout = (error as any)?.message?.includes('timeout')
+      if (isTimeout) {
+        console.warn('AuthProvider: Profile fetch timed out. Using fallback profile and retrying in background...')
+      } else {
+        console.error('AuthProvider: Failed to fetch profile:', error)
+      }
       setProfile((prev) => prev ?? fallbackProfile)
+
+      // Background retry once after a short delay to hydrate profile when available
+      setTimeout(() => {
+        supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userId)
+          .maybeSingle()
+          .then(({ data, error }) => {
+            if (error) return
+            if (data) {
+              setProfile(data as any)
+              console.log('AuthProvider: Profile hydrated after background retry')
+            }
+          })
+          .catch(() => {})
+      }, 2000)
     } finally {
       console.log('AuthProvider: Setting loading to false')
       setLoading(false)

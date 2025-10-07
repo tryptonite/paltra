@@ -7,18 +7,6 @@ import AssignDockDoorDialog from '../components/dockdoors/AssignDockDoorDialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from "@/components/ui/use-toast";
 
-const StatusLegend = () =>
-<Card className="mt-8 bg-white/60 backdrop-blur-sm">
-        <CardHeader>
-            <CardTitle className="text-lg">Status Legend</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-4 text-sm">
-            <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-green-500"></div>Available</div>
-            <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-blue-500"></div>Loading</div>
-            <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-red-500"></div>Out-of-service</div>
-        </CardContent>
-    </Card>;
-
 export default function DockDoorsPage() {
   const [doors, setDoors] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -181,8 +169,6 @@ export default function DockDoorsPage() {
           </CardContent>
         </Card>
       </div>
-
-      <StatusLegend />
 
       <AssignDockDoorDialog
         open={!!selectedDoor}

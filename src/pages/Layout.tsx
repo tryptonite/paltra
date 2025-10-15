@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { User } from '@/api/entities';
 import { useAuth } from '@/contexts/AuthContext';
-import { Analytics } from "@vercel/analytics/react"
+import { Analytics } from "@vercel/analytics/react";
 import {
   DropdownMenu,
   DropdownMenuContent,

@@ -308,6 +308,7 @@ export default function Layout({ children, currentPageName }) {
         </main>
       </div>
       <Toaster />
+      <Analytics />
     </div>
   );
 }

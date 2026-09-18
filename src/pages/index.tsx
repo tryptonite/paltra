@@ -13,7 +13,7 @@ const DockDoors = lazy(() => import('./DockDoors'))
 const Help = lazy(() => import('./Help'))
 const Layout = lazy(() => import('./Layout'))
 const LineCounts = lazy(() => import('./Line-Counts'))
-const LiveLoads = lazy(() => import('./LiveLoads'))
+const LiveLoads = lazy(() => import('./LiveLoads'))\nconst OrderRequests = lazy(() => import('./OrderRequests'))
 const Truckloads = lazy(() => import('./Truckloads'))
 const UserApproval = lazy(() => import('./UserApproval'))
 const Dashboard = lazy(() => import('./Dashboard'))
@@ -116,7 +116,7 @@ function PagesContent(): React.JSX.Element {
           <Route path="/" element={<Dashboard />} />
           <Route path="/Dashboard" element={<Dashboard />} />
           <Route path="/Dimensions" element={<Dimensions />} />
-          <Route path="/LiveLoads" element={<LiveLoads />} />
+          <Route path="/LiveLoads" element={<LiveLoads />} />\n          <Route path="/OrderRequests" element={<OrderRequests />} />
           <Route path="/BTX" element={<BTX />} />
           <Route path="/Call-Ins" element={<CallIns />} />
           <Route path="/Truckloads" element={<Truckloads />} />

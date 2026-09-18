@@ -14,10 +14,15 @@ import { AlertTriangle, CheckCircle2, ClipboardList, Clock3, Plus, RefreshCw, Se
 
 type RequestStatus = 'open' | 'waiting' | 'completed';
 type RequestPriority = 'normal' | 'urgent';
+const departments = ['P&S', 'WM-95', 'AVD'] as const;
+type Department = typeof departments[number];
 
 type OrderRequest = {
   id: string;
   order_number: string;
+  control_number: string | null;
+  new_pro_tracking_number: string | null;
+  department: Department | null;
   customer: string | null;
   request_type: string;
   request_details: string;
@@ -37,6 +42,9 @@ type OrderRequest = {
 
 const emptyForm = {
   order_number: '',
+  control_number: '',
+  new_pro_tracking_number: '',
+  department: '' as Department | '',
   customer: '',
   request_type: 'special_request',
   request_details: '',
@@ -152,6 +160,9 @@ export default function OrderRequests() {
 
       return [
         item.order_number,
+        item.control_number,
+        item.new_pro_tracking_number,
+        item.department,
         item.customer,
         item.request_details,
         item.requested_by,
@@ -181,10 +192,10 @@ export default function OrderRequests() {
       return;
     }
 
-    if (!form.order_number.trim() || !form.request_details.trim()) {
+    if (!form.order_number.trim() || !departments.includes(form.department as Department) || !form.request_details.trim()) {
       toast({
         title: 'Missing required fields',
-        description: 'Order / Control # and request details are required.',
+        description: 'Order #, department, and request details are required.',
         variant: 'destructive',
       });
       return;
@@ -194,6 +205,9 @@ export default function OrderRequests() {
     try {
       const payload = {
         order_number: form.order_number.trim(),
+        control_number: form.control_number.trim() || null,
+        new_pro_tracking_number: form.new_pro_tracking_number.trim() || null,
+        department: form.department,
         customer: form.customer.trim() || null,
         request_type: form.request_type,
         request_details: form.request_details.trim(),
@@ -334,15 +348,49 @@ export default function OrderRequests() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               <div className="space-y-2">
-                <Label htmlFor="order-number">Order / Control # *</Label>
+                <Label htmlFor="order-number">Order # *</Label>
                 <Input
                   id="order-number"
                   value={form.order_number}
                   onChange={(e) => setForm((current) => ({ ...current, order_number: e.target.value }))}
-                  placeholder="SO, control, delivery #"
+                  placeholder="Order #"
                 />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="control-number">Control #</Label>
+                <Input
+                  id="control-number"
+                  value={form.control_number}
+                  onChange={(e) => setForm((current) => ({ ...current, control_number: e.target.value }))}
+                  placeholder="Control #"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="new-pro-tracking-number">New PRO/Tracking #</Label>
+                <Input
+                  id="new-pro-tracking-number"
+                  value={form.new_pro_tracking_number}
+                  onChange={(e) => setForm((current) => ({ ...current, new_pro_tracking_number: e.target.value }))}
+                  placeholder="New PRO or tracking #"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="department">Department *</Label>
+                <Select
+                  value={form.department}
+                  onValueChange={(value) => setForm((current) => ({ ...current, department: value as Department }))}
+                >
+                  <SelectTrigger id="department">
+                    <SelectValue placeholder="Select department" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {departments.map((department) => (
+                      <SelectItem key={department} value={department}>{department}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="customer">Customer</Label>
@@ -456,7 +504,7 @@ export default function OrderRequests() {
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search order #, customer, request, requester…"
+                placeholder="Search order #, control #, PRO/tracking #, department…"
                 className="pl-9"
               />
             </div>
@@ -482,7 +530,10 @@ export default function OrderRequests() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="min-w-[145px]">Order / Control #</TableHead>
+                  <TableHead className="min-w-[145px]">Order #</TableHead>
+                  <TableHead className="min-w-[130px]">Control #</TableHead>
+                  <TableHead className="min-w-[165px]">New PRO/Tracking #</TableHead>
+                  <TableHead className="min-w-[120px]">Department</TableHead>
                   <TableHead className="min-w-[280px]">Request</TableHead>
                   <TableHead className="min-w-[120px]">Priority</TableHead>
                   <TableHead className="min-w-[150px]">Status</TableHead>
@@ -495,13 +546,13 @@ export default function OrderRequests() {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="py-10 text-center text-slate-500">
+                    <TableCell colSpan={11} className="py-10 text-center text-slate-500">
                       Loading requests…
                     </TableCell>
                   </TableRow>
                 ) : filteredRequests.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="py-10 text-center text-slate-500">
+                    <TableCell colSpan={11} className="py-10 text-center text-slate-500">
                       No requests match the current filters.
                     </TableCell>
                   </TableRow>
@@ -514,6 +565,15 @@ export default function OrderRequests() {
                         <div className="mt-1 text-xs text-slate-500">
                           {requestTypeLabels[item.request_type] || item.request_type}
                         </div>
+                      </TableCell>
+                      <TableCell className="align-top text-sm text-slate-700">
+                        {item.control_number || '—'}
+                      </TableCell>
+                      <TableCell className="align-top text-sm text-slate-700">
+                        {item.new_pro_tracking_number || '—'}
+                      </TableCell>
+                      <TableCell className="align-top text-sm text-slate-700">
+                        {item.department || '—'}
                       </TableCell>
                       <TableCell className="align-top">
                         <div className="whitespace-pre-wrap text-sm text-slate-800">{item.request_details}</div>

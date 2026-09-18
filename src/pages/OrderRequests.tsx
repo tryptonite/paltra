@@ -373,8 +373,8 @@ export default function OrderRequests() {
                 <Label>Priority</Label>
                 <Select
                   value={form.priority}
-                  onValueChange={(value: RequestPriority) =>
-                    setForm((current) => ({ ...current, priority: value }))
+                  onValueChange={(value) =>
+                    setForm((current) => ({ ...current, priority: value as RequestPriority }))
                   }
                 >
                   <SelectTrigger>
@@ -463,7 +463,7 @@ export default function OrderRequests() {
             <div className="w-full md:w-48">
               <Select
                 value={statusFilter}
-                onValueChange={(value: 'all' | RequestStatus) => setStatusFilter(value)}
+                onValueChange={(value) => setStatusFilter(value as 'all' | RequestStatus)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Status" />
@@ -543,7 +543,7 @@ export default function OrderRequests() {
                           <Badge className={statusStyles[item.status]}>{statusLabels[item.status]}</Badge>
                           <Select
                             value={item.status}
-                            onValueChange={(value: RequestStatus) => updateStatus(item, value)}
+                            onValueChange={(value) => updateStatus(item, value as RequestStatus)}
                             disabled={updatingId === item.id}
                           >
                             <SelectTrigger className="h-8 w-[135px]">

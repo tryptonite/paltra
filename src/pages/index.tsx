@@ -22,6 +22,7 @@ const PAGES = {
   Dashboard,
   Dimensions,
   LiveLoads,
+  OrderRequests,
   BTX,
   'Call-Ins': CallIns,
   Truckloads,

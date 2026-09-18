@@ -1,9 +1,11 @@
 import React from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowRightLeft, ClipboardList, Download, Package, Plane, Truck, BarChart3 } from 'lucide-react'
+import { AlertTriangle, ArrowRightLeft, ClipboardList, Download, Package, Plane, Truck, BarChart3 } from 'lucide-react'
 import { CallIn, Changeover, Dimension, LiveLoad, Truckload, BTX } from '@/api/entities'
 import { useEffect, useState } from 'react'
 import { getLineCounts } from '@/api/vLineCounts'
+import { supabase } from '@/lib/supabase'
+import { Link } from 'react-router-dom'
 
 const activityIcons: Record<string, any> = {
   Dimensions: Package,
@@ -69,6 +71,7 @@ export default function Dashboard() {
   const [recentActivity, setRecentActivity] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [orderRequestSummary, setOrderRequestSummary] = useState({ active: 0, urgent: 0 })
 
   useEffect(() => {
     let isMounted = true
@@ -104,12 +107,72 @@ export default function Dashboard() {
     }
   }, [])
 
+  useEffect(() => {
+    let isMounted = true
+
+    const loadOrderRequestSummary = async () => {
+      const { data, error } = await supabase
+        .from('order_requests')
+        .select('status, priority')
+        .neq('status', 'completed')
+
+      if (error) {
+        console.warn('Dashboard: Order Requests summary unavailable', error.message)
+        return
+      }
+
+      if (isMounted) {
+        const rows = data || []
+        setOrderRequestSummary({
+          active: rows.length,
+          urgent: rows.filter((item: any) => item.priority === 'urgent').length,
+        })
+      }
+    }
+
+    loadOrderRequestSummary()
+    const interval = setInterval(loadOrderRequestSummary, 2 * 60 * 1000)
+
+    return () => {
+      isMounted = false
+      clearInterval(interval)
+    }
+  }, [])
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-slate-900">Dashboard</h1>
         <p className="text-slate-600">Here is a snapshot of what has changed across the portal.</p>
       </div>
+
+      <Link to="/OrderRequests" className="block">
+        <Card className="transition-shadow hover:shadow-md">
+          <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="rounded-full bg-blue-100 p-2.5">
+                <ClipboardList className="h-5 w-5 text-blue-700" />
+              </div>
+              <div>
+                <p className="font-semibold text-slate-900">Order Requests</p>
+                <p className="text-sm text-slate-500">Changed orders and special instructions that still need attention.</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <p className="text-2xl font-bold text-slate-900">{orderRequestSummary.active}</p>
+                <p className="text-xs text-slate-500">active</p>
+              </div>
+              {orderRequestSummary.urgent > 0 && (
+                <div className="flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-sm font-semibold text-red-700">
+                  <AlertTriangle className="h-4 w-4" />
+                  {orderRequestSummary.urgent} urgent
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </Link>
 
       <Card>
         <CardHeader>

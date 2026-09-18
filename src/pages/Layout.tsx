@@ -2,7 +2,7 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
-import { Package, Truck, Phone, Plane, User as UserIcon, Menu, LogOut, ArrowRightLeft, BarChart3, HelpCircle, Warehouse, LayoutDashboard } from 'lucide-react';
+import { Package, Truck, Phone, Plane, User as UserIcon, Menu, LogOut, ArrowRightLeft, BarChart3, HelpCircle, Warehouse, LayoutDashboard, ClipboardList } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { User } from '@/api/entities';
@@ -24,6 +24,7 @@ const navigationItems = [
   { title: 'Dock Doors', url: createPageUrl('DockDoors'), icon: Warehouse, adminOnly: false },
   { title: 'Live Loads', url: createPageUrl('LiveLoads'), icon: Truck, adminOnly: false },
   { title: 'Call-Ins', url: createPageUrl('Call-Ins'), icon: Phone, adminOnly: false },
+  { title: 'Order Requests', url: createPageUrl('OrderRequests'), icon: ClipboardList, adminOnly: false },
   { title: 'Dimensions', url: createPageUrl('Dimensions'), icon: Package, adminOnly: false },
   { title: 'Changeovers', url: createPageUrl('Changeovers'), icon: ArrowRightLeft, adminOnly: false },
   { title: 'BTX', url: createPageUrl('BTX'), icon: Plane, adminOnly: false },
@@ -39,6 +40,7 @@ const pagePrefetchLoaders: Record<string, (() => Promise<unknown>) | undefined> 
   'Dock Doors': () => import('./DockDoors'),
   'Live Loads': () => import('./LiveLoads'),
   'Call-Ins': () => import('./Call-Ins'),
+  'Order Requests': () => import('./OrderRequests'),
   'Dimensions': () => import('./Dimensions'),
   'Changeovers': () => import('./Changeovers'),
   'BTX': () => import('./BTX'),

@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS public.order_requests (
   order_number TEXT NOT NULL,
   customer TEXT,
   request_type TEXT NOT NULL DEFAULT 'special_request'
-    CHECK (request_type IN ('order_change', 'special_request', 'hold', 'ship_via', 'address', 'quantity', 'other')),
+    CHECK (request_type IN ('order_change', 'special_request', 'hold', 'ship_via', 'address', 'quantity', 'missed_ltl', 'other')),
   request_details TEXT NOT NULL,
   requested_by TEXT,
   action_needed TEXT,
@@ -97,6 +97,12 @@ USING (
       AND profiles.role = 'admin'
   )
 );
+
+DROP POLICY IF EXISTS "Creators can delete their order requests" ON public.order_requests;
+CREATE POLICY "Creators can delete their order requests"
+ON public.order_requests
+FOR DELETE TO authenticated
+USING (created_by = (SELECT auth.uid()));
 
 DO $$
 BEGIN

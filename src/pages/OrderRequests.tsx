@@ -7,10 +7,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/components/ui/use-toast';
-import { AlertTriangle, CheckCircle2, ClipboardList, Clock3, Plus, RefreshCw, Search } from 'lucide-react';
+import { AlertTriangle, ClipboardList, Clock3, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 
 type RequestStatus = 'open' | 'waiting' | 'completed';
 type RequestPriority = 'normal' | 'urgent';
@@ -61,6 +62,7 @@ const requestTypeLabels: Record<string, string> = {
   ship_via: 'Ship Via / Carrier',
   address: 'Address / Destination',
   quantity: 'Quantity',
+  missed_ltl: 'Missed LTL',
   other: 'Other',
 };
 
@@ -98,6 +100,7 @@ export default function OrderRequests() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadRequests = useCallback(async () => {
     setIsLoading(true);
@@ -282,6 +285,35 @@ export default function OrderRequests() {
       });
     } finally {
       setUpdatingId(null);
+    }
+  };
+
+  const deleteRequest = async (item: OrderRequest) => {
+    if (!user?.id || item.created_by !== user.id) return;
+
+    setDeletingId(item.id);
+    try {
+      const { data, error } = await supabase
+        .from('order_requests')
+        .delete()
+        .eq('id', item.id)
+        .eq('created_by', user.id)
+        .select('id');
+
+      if (error) throw error;
+      if (!data?.length) throw new Error('Request could not be deleted. Refresh and try again.');
+
+      setRequests((current) => current.filter((request) => request.id !== item.id));
+      toast({ title: 'Request deleted', description: `${item.order_number} was removed.` });
+    } catch (error: any) {
+      console.error('OrderRequests: failed to delete request', error);
+      toast({
+        title: 'Unable to delete request',
+        description: error?.message || 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -541,18 +573,19 @@ export default function OrderRequests() {
                   <TableHead className="min-w-[165px]">Entered By</TableHead>
                   <TableHead className="min-w-[145px]">Created</TableHead>
                   <TableHead className="min-w-[150px]">Completed</TableHead>
+                  <TableHead className="min-w-[110px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="py-10 text-center text-slate-500">
+                    <TableCell colSpan={12} className="py-10 text-center text-slate-500">
                       Loading requests…
                     </TableCell>
                   </TableRow>
                 ) : filteredRequests.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="py-10 text-center text-slate-500">
+                    <TableCell colSpan={12} className="py-10 text-center text-slate-500">
                       No requests match the current filters.
                     </TableCell>
                   </TableRow>
@@ -599,35 +632,20 @@ export default function OrderRequests() {
                         )}
                       </TableCell>
                       <TableCell className="align-top">
-                        <div className="space-y-2">
-                          <Badge className={statusStyles[item.status]}>{statusLabels[item.status]}</Badge>
-                          <Select
-                            value={item.status}
-                            onValueChange={(value) => updateStatus(item, value as RequestStatus)}
-                            disabled={updatingId === item.id}
-                          >
-                            <SelectTrigger className="h-8 w-[135px]">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="open">Open</SelectItem>
-                              <SelectItem value="waiting">Waiting</SelectItem>
-                              <SelectItem value="completed">Completed</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          {item.status !== 'completed' && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-8"
-                              onClick={() => updateStatus(item, 'completed')}
-                              disabled={updatingId === item.id}
-                            >
-                              <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
-                              Complete
-                            </Button>
-                          )}
-                        </div>
+                        <Select
+                          value={item.status}
+                          onValueChange={(value) => updateStatus(item, value as RequestStatus)}
+                          disabled={updatingId === item.id}
+                        >
+                          <SelectTrigger className={`h-8 w-[135px] ${statusStyles[item.status]}`} aria-label={`Status for order ${item.order_number}`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="open">Open</SelectItem>
+                            <SelectItem value="waiting">Waiting</SelectItem>
+                            <SelectItem value="completed">Completed</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </TableCell>
                       <TableCell className="align-top text-sm text-slate-700">
                         {item.requested_by || '—'}
@@ -648,6 +666,28 @@ export default function OrderRequests() {
                           </div>
                         ) : (
                           '—'
+                        )}
+                      </TableCell>
+                      <TableCell className="align-top">
+                        {user?.id === item.created_by && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="ghost" size="sm" disabled={deletingId === item.id} className="text-red-600 hover:text-red-700">
+                                <Trash2 className="mr-1 h-4 w-4" />
+                                Delete
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete request for {item.order_number}?</AlertDialogTitle>
+                                <AlertDialogDescription>This permanently removes this request from the log.</AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => deleteRequest(item)} className="bg-red-600 hover:bg-red-700">Delete request</AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         )}
                       </TableCell>
                     </TableRow>

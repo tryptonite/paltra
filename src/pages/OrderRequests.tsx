@@ -195,10 +195,15 @@ export default function OrderRequests() {
       return;
     }
 
-    if (!form.order_number.trim() || !departments.includes(form.department as Department) || !form.request_details.trim()) {
+    if (
+      !form.control_number.trim() ||
+      !form.new_pro_tracking_number.trim() ||
+      !departments.includes(form.department as Department) ||
+      !form.action_needed.trim()
+    ) {
       toast({
         title: 'Missing required fields',
-        description: 'Order #, department, and request details are required.',
+        description: 'Control #, New PRO/Tracking #, department, and Action Needed are required.',
         variant: 'destructive',
       });
       return;
@@ -382,7 +387,7 @@ export default function OrderRequests() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               <div className="space-y-2">
-                <Label htmlFor="order-number">Order # *</Label>
+                <Label htmlFor="order-number">Order #</Label>
                 <Input
                   id="order-number"
                   value={form.order_number}
@@ -391,21 +396,23 @@ export default function OrderRequests() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="control-number">Control #</Label>
+                <Label htmlFor="control-number">Control # *</Label>
                 <Input
                   id="control-number"
                   value={form.control_number}
                   onChange={(e) => setForm((current) => ({ ...current, control_number: e.target.value }))}
                   placeholder="Control #"
+                  required
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="new-pro-tracking-number">New PRO/Tracking #</Label>
+                <Label htmlFor="new-pro-tracking-number">New PRO/Tracking # *</Label>
                 <Input
                   id="new-pro-tracking-number"
                   value={form.new_pro_tracking_number}
                   onChange={(e) => setForm((current) => ({ ...current, new_pro_tracking_number: e.target.value }))}
                   placeholder="New PRO or tracking #"
+                  required
                 />
               </div>
               <div className="space-y-2">
@@ -479,19 +486,20 @@ export default function OrderRequests() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="action-needed">Action Needed</Label>
+                <Label htmlFor="action-needed">Action Needed *</Label>
                 <Input
                   id="action-needed"
                   value={form.action_needed}
                   onChange={(e) => setForm((current) => ({ ...current, action_needed: e.target.value }))}
                   placeholder="Example: Reprint BOL and notify dock"
+                  required
                 />
               </div>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="request-details">Request / Change Details *</Label>
+                <Label htmlFor="request-details">Request / Change Details</Label>
                 <Textarea
                   id="request-details"
                   value={form.request_details}

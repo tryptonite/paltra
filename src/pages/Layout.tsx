@@ -192,7 +192,7 @@ export default function Layout({ children, currentPageName }) {
   }
 
   return (
-    <div className="flex h-screen bg-slate-50 overflow-x-hidden">
+    <div className="flex min-h-[100dvh] bg-slate-50 overflow-x-hidden md:h-screen md:min-h-0">
       {/* Fixed Sidebar */}
       <div className="hidden md:flex w-64 fixed left-0 top-0 h-full bg-gradient-to-b from-slate-800 to-slate-900 border-r border-slate-700 z-40">
         <div className="flex flex-col w-full">
@@ -218,7 +218,7 @@ export default function Layout({ children, currentPageName }) {
 
       {/* Main Content */}
       <div className="flex-1 md:ml-64 flex flex-col min-w-0 overflow-x-hidden">
-        <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white/95 backdrop-blur-sm px-3 sm:px-6 shadow-sm z-30 min-w-0">
+        <header className="sticky top-0 flex h-16 shrink-0 items-center justify-between border-b border-slate-200 bg-white/95 backdrop-blur-sm px-3 sm:px-6 shadow-sm z-30 min-w-0 md:static">
           <div className="flex items-center gap-2 min-w-0 flex-shrink-0">
             <Sheet>
               <SheetTrigger asChild>
@@ -303,7 +303,7 @@ export default function Layout({ children, currentPageName }) {
           </div>
         </header>
 
-        <main className="flex-1 overflow-auto bg-gradient-to-br from-slate-50 to-slate-100 overflow-x-hidden">
+        <main className="flex-1 overflow-x-hidden bg-gradient-to-br from-slate-50 to-slate-100 md:min-h-0 md:overflow-y-auto">
           <div className="max-w-7xl mx-auto p-3 sm:p-6 lg:p-8 min-w-0">
             {children}
           </div>

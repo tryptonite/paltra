@@ -23,6 +23,7 @@ type OrderRequest = {
   id: string;
   order_number: string;
   control_number: string | null;
+  new_ship_via: string | null;
   new_pro_tracking_number: string | null;
   department: Department | null;
   customer: string | null;
@@ -45,6 +46,7 @@ type OrderRequest = {
 const emptyForm = {
   order_number: '',
   control_number: '',
+  new_ship_via: '',
   new_pro_tracking_number: '',
   department: '' as Department | '',
   customer: '',
@@ -172,6 +174,7 @@ export default function OrderRequests() {
       return [
         item.order_number,
         item.control_number,
+        item.new_ship_via,
         item.new_pro_tracking_number,
         item.department,
         item.customer,
@@ -222,6 +225,7 @@ export default function OrderRequests() {
       const payload = {
         order_number: form.order_number.trim(),
         control_number: form.control_number.trim() || null,
+        new_ship_via: form.new_ship_via.trim() || null,
         new_pro_tracking_number: form.new_pro_tracking_number.trim() || null,
         department: form.department,
         customer: form.customer.trim() || null,
@@ -369,6 +373,7 @@ export default function OrderRequests() {
     setEditForm({
       order_number: item.order_number || '',
       control_number: item.control_number || '',
+      new_ship_via: item.new_ship_via || '',
       new_pro_tracking_number: item.new_pro_tracking_number || '',
       department: item.department || '',
       customer: item.customer || '',
@@ -405,6 +410,7 @@ export default function OrderRequests() {
       const updates = {
         order_number: editForm.order_number.trim(),
         control_number: editForm.control_number.trim(),
+        new_ship_via: editForm.new_ship_via.trim() || null,
         new_pro_tracking_number: editForm.new_pro_tracking_number.trim(),
         department: editForm.department as Department,
         customer: editForm.customer.trim() || null,
@@ -525,6 +531,15 @@ export default function OrderRequests() {
                   onChange={(e) => setForm((current) => ({ ...current, control_number: e.target.value }))}
                   placeholder="Control #"
                   required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="new-ship-via">New Ship Via</Label>
+                <Input
+                  id="new-ship-via"
+                  value={form.new_ship_via}
+                  onChange={(e) => setForm((current) => ({ ...current, new_ship_via: e.target.value }))}
+                  placeholder="New carrier or shipping method"
                 />
               </div>
               <div className="space-y-2">
@@ -666,7 +681,7 @@ export default function OrderRequests() {
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search order #, control #, PRO/tracking #, department…"
+                placeholder="Search order #, control #, ship via, PRO/tracking #, department…"
                 className="pl-9"
               />
             </div>
@@ -694,6 +709,7 @@ export default function OrderRequests() {
                 <TableRow>
                   <TableHead className="min-w-[145px]">Order #</TableHead>
                   <TableHead className="min-w-[130px]">Control #</TableHead>
+                  <TableHead className="min-w-[145px]">New Ship Via</TableHead>
                   <TableHead className="min-w-[165px]">New PRO/Tracking #</TableHead>
                   <TableHead className="min-w-[120px]">Department</TableHead>
                   <TableHead className="min-w-[280px]">Request</TableHead>
@@ -709,13 +725,13 @@ export default function OrderRequests() {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={12} className="py-10 text-center text-slate-500">
+                    <TableCell colSpan={13} className="py-10 text-center text-slate-500">
                       Loading requests…
                     </TableCell>
                   </TableRow>
                 ) : filteredRequests.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={12} className="py-10 text-center text-slate-500">
+                    <TableCell colSpan={13} className="py-10 text-center text-slate-500">
                       No requests match the current filters.
                     </TableCell>
                   </TableRow>
@@ -731,6 +747,9 @@ export default function OrderRequests() {
                       </TableCell>
                       <TableCell className="align-top text-sm text-slate-700">
                         {item.control_number || '—'}
+                      </TableCell>
+                      <TableCell className="align-top text-sm text-slate-700">
+                        {item.new_ship_via || '—'}
                       </TableCell>
                       <TableCell className="align-top text-sm text-slate-700">
                         {item.new_pro_tracking_number ? (
@@ -886,6 +905,15 @@ export default function OrderRequests() {
                   value={editForm.control_number}
                   onChange={(e) => setEditForm((current) => ({ ...current, control_number: e.target.value }))}
                   required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-new-ship-via">New Ship Via</Label>
+                <Input
+                  id="edit-new-ship-via"
+                  value={editForm.new_ship_via}
+                  onChange={(e) => setEditForm((current) => ({ ...current, new_ship_via: e.target.value }))}
+                  placeholder="New carrier or shipping method"
                 />
               </div>
               <div className="space-y-2">

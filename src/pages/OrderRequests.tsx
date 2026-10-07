@@ -8,10 +8,11 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/components/ui/use-toast';
-import { AlertTriangle, ClipboardList, Clock3, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { AlertTriangle, Check, ClipboardList, Clock3, Copy, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 
 type RequestStatus = 'open' | 'waiting' | 'completed';
 type RequestPriority = 'normal' | 'urgent';
@@ -90,6 +91,9 @@ const formatEastern = (dateString: string | null) => {
   });
 };
 
+const getErrorMessage = (error: unknown) =>
+  error instanceof Error && error.message ? error.message : 'Please try again.';
+
 export default function OrderRequests() {
   const { user, profile } = useAuth();
   const { toast } = useToast();
@@ -101,6 +105,10 @@ export default function OrderRequests() {
   const [isSaving, setIsSaving] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingRequest, setEditingRequest] = useState<OrderRequest | null>(null);
+  const [editForm, setEditForm] = useState(emptyForm);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [copiedRequestId, setCopiedRequestId] = useState<string | null>(null);
 
   const loadRequests = useCallback(async () => {
     setIsLoading(true);
@@ -112,11 +120,11 @@ export default function OrderRequests() {
 
       if (error) throw error;
       setRequests((data || []) as OrderRequest[]);
-    } catch (error: any) {
+    } catch (error) {
       console.error('OrderRequests: failed to load requests', error);
       toast({
         title: 'Unable to load requests',
-        description: error?.message || 'Please try again.',
+        description: getErrorMessage(error),
         variant: 'destructive',
       });
     } finally {
@@ -237,11 +245,11 @@ export default function OrderRequests() {
         description: `${payload.order_number} is now being tracked.`,
       });
       await loadRequests();
-    } catch (error: any) {
+    } catch (error) {
       console.error('OrderRequests: failed to create request', error);
       toast({
         title: 'Unable to add request',
-        description: error?.message || 'Please try again.',
+        description: getErrorMessage(error),
         variant: 'destructive',
       });
     } finally {
@@ -281,11 +289,11 @@ export default function OrderRequests() {
         title: 'Status updated',
         description: `${item.order_number} is now ${statusLabels[status].toLowerCase()}.`,
       });
-    } catch (error: any) {
+    } catch (error) {
       console.error('OrderRequests: failed to update status', error);
       toast({
         title: 'Unable to update status',
-        description: error?.message || 'Please try again.',
+        description: getErrorMessage(error),
         variant: 'destructive',
       });
     } finally {
@@ -310,15 +318,129 @@ export default function OrderRequests() {
 
       setRequests((current) => current.filter((request) => request.id !== item.id));
       toast({ title: 'Request deleted', description: `${item.order_number} was removed.` });
-    } catch (error: any) {
+    } catch (error) {
       console.error('OrderRequests: failed to delete request', error);
       toast({
         title: 'Unable to delete request',
-        description: error?.message || 'Please try again.',
+        description: getErrorMessage(error),
         variant: 'destructive',
       });
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const copyTrackingNumber = async (item: OrderRequest) => {
+    const trackingNumber = item.new_pro_tracking_number?.trim();
+    if (!trackingNumber) return;
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(trackingNumber);
+      } else {
+        const input = document.createElement('textarea');
+        input.value = trackingNumber;
+        input.style.position = 'fixed';
+        input.style.opacity = '0';
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        document.body.removeChild(input);
+      }
+
+      setCopiedRequestId(item.id);
+      window.setTimeout(() => {
+        setCopiedRequestId((current) => (current === item.id ? null : current));
+      }, 1500);
+      toast({ title: 'Tracking number copied', description: trackingNumber });
+    } catch (error) {
+      console.error('OrderRequests: failed to copy tracking number', error);
+      toast({
+        title: 'Unable to copy tracking number',
+        description: 'Press and hold the number to copy it manually.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const openEditDialog = (item: OrderRequest) => {
+    if (!user?.id || item.created_by !== user.id) return;
+
+    setEditForm({
+      order_number: item.order_number || '',
+      control_number: item.control_number || '',
+      new_pro_tracking_number: item.new_pro_tracking_number || '',
+      department: item.department || '',
+      customer: item.customer || '',
+      request_type: item.request_type,
+      request_details: item.request_details || '',
+      requested_by: item.requested_by || '',
+      action_needed: item.action_needed || '',
+      priority: item.priority,
+      notes: item.notes || '',
+    });
+    setEditingRequest(item);
+  };
+
+  const saveEditedRequest = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!user?.id || !editingRequest || editingRequest.created_by !== user.id) return;
+
+    if (
+      !editForm.control_number.trim() ||
+      !editForm.new_pro_tracking_number.trim() ||
+      !departments.includes(editForm.department as Department) ||
+      !editForm.action_needed.trim()
+    ) {
+      toast({
+        title: 'Missing required fields',
+        description: 'Control #, New PRO/Tracking #, department, and Action Needed are required.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsSavingEdit(true);
+    try {
+      const updates = {
+        order_number: editForm.order_number.trim(),
+        control_number: editForm.control_number.trim(),
+        new_pro_tracking_number: editForm.new_pro_tracking_number.trim(),
+        department: editForm.department as Department,
+        customer: editForm.customer.trim() || null,
+        request_type: editForm.request_type,
+        request_details: editForm.request_details.trim(),
+        requested_by: editForm.requested_by.trim() || null,
+        action_needed: editForm.action_needed.trim(),
+        priority: editForm.priority,
+        notes: editForm.notes.trim() || null,
+      };
+
+      const { data, error } = await supabase
+        .from('order_requests')
+        .update(updates)
+        .eq('id', editingRequest.id)
+        .eq('created_by', user.id)
+        .select('*')
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data) throw new Error('Request could not be updated. Refresh and try again.');
+
+      setRequests((current) =>
+        current.map((request) => (request.id === editingRequest.id ? (data as OrderRequest) : request))
+      );
+      setEditingRequest(null);
+      toast({ title: 'Request updated', description: 'Your changes have been saved.' });
+    } catch (error) {
+      console.error('OrderRequests: failed to update request', error);
+      toast({
+        title: 'Unable to update request',
+        description: getErrorMessage(error),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSavingEdit(false);
     }
   };
 
@@ -581,7 +703,7 @@ export default function OrderRequests() {
                   <TableHead className="min-w-[165px]">Entered By</TableHead>
                   <TableHead className="min-w-[145px]">Created</TableHead>
                   <TableHead className="min-w-[150px]">Completed</TableHead>
-                  <TableHead className="min-w-[110px]">Actions</TableHead>
+                  <TableHead className="min-w-[190px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -611,7 +733,28 @@ export default function OrderRequests() {
                         {item.control_number || '—'}
                       </TableCell>
                       <TableCell className="align-top text-sm text-slate-700">
-                        {item.new_pro_tracking_number || '—'}
+                        {item.new_pro_tracking_number ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-medium text-slate-900">{item.new_pro_tracking_number}</span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 shrink-0"
+                              onClick={() => copyTrackingNumber(item)}
+                              aria-label={`Copy tracking number ${item.new_pro_tracking_number}`}
+                              title="Copy tracking number"
+                            >
+                              {copiedRequestId === item.id ? (
+                                <Check className="h-4 w-4 text-emerald-600" />
+                              ) : (
+                                <Copy className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </div>
+                        ) : (
+                          '—'
+                        )}
                       </TableCell>
                       <TableCell className="align-top text-sm text-slate-700">
                         {item.department || '—'}
@@ -678,24 +821,30 @@ export default function OrderRequests() {
                       </TableCell>
                       <TableCell className="align-top">
                         {user?.id === item.created_by && (
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="sm" disabled={deletingId === item.id} className="text-red-600 hover:text-red-700">
-                                <Trash2 className="mr-1 h-4 w-4" />
-                                Delete
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Delete request for {item.order_number}?</AlertDialogTitle>
-                                <AlertDialogDescription>This permanently removes this request from the log.</AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => deleteRequest(item)} className="bg-red-600 hover:bg-red-700">Delete request</AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
+                          <div className="flex items-center gap-1">
+                            <Button type="button" variant="ghost" size="sm" onClick={() => openEditDialog(item)}>
+                              <Pencil className="mr-1 h-4 w-4" />
+                              Edit
+                            </Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="ghost" size="sm" disabled={deletingId === item.id} className="text-red-600 hover:text-red-700">
+                                  <Trash2 className="mr-1 h-4 w-4" />
+                                  Delete
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Delete request for {item.order_number || item.control_number}?</AlertDialogTitle>
+                                  <AlertDialogDescription>This permanently removes this request from the log.</AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => deleteRequest(item)} className="bg-red-600 hover:bg-red-700">Delete request</AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
                         )}
                       </TableCell>
                     </TableRow>
@@ -706,6 +855,146 @@ export default function OrderRequests() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog
+        open={Boolean(editingRequest)}
+        onOpenChange={(open) => {
+          if (!open && !isSavingEdit) setEditingRequest(null);
+        }}
+      >
+        <DialogContent className="max-h-[90dvh] max-w-3xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit order request</DialogTitle>
+            <DialogDescription>
+              Update the request you submitted. Status changes remain available in the request log.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={saveEditedRequest} className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="edit-order-number">Order #</Label>
+                <Input
+                  id="edit-order-number"
+                  value={editForm.order_number}
+                  onChange={(e) => setEditForm((current) => ({ ...current, order_number: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-control-number">Control # *</Label>
+                <Input
+                  id="edit-control-number"
+                  value={editForm.control_number}
+                  onChange={(e) => setEditForm((current) => ({ ...current, control_number: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-pro-tracking-number">New PRO/Tracking # *</Label>
+                <Input
+                  id="edit-pro-tracking-number"
+                  value={editForm.new_pro_tracking_number}
+                  onChange={(e) => setEditForm((current) => ({ ...current, new_pro_tracking_number: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-department">Department *</Label>
+                <Select
+                  value={editForm.department}
+                  onValueChange={(value) => setEditForm((current) => ({ ...current, department: value as Department }))}
+                >
+                  <SelectTrigger id="edit-department">
+                    <SelectValue placeholder="Select department" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {departments.map((department) => (
+                      <SelectItem key={department} value={department}>{department}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-customer">Customer</Label>
+                <Input
+                  id="edit-customer"
+                  value={editForm.customer}
+                  onChange={(e) => setEditForm((current) => ({ ...current, customer: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-requested-by">Requested By</Label>
+                <Input
+                  id="edit-requested-by"
+                  value={editForm.requested_by}
+                  onChange={(e) => setEditForm((current) => ({ ...current, requested_by: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Request Type</Label>
+                <Select
+                  value={editForm.request_type}
+                  onValueChange={(value) => setEditForm((current) => ({ ...current, request_type: value }))}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(requestTypeLabels).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Priority</Label>
+                <Select
+                  value={editForm.priority}
+                  onValueChange={(value) => setEditForm((current) => ({ ...current, priority: value as RequestPriority }))}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="normal">Normal</SelectItem>
+                    <SelectItem value="urgent">Urgent</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="edit-action-needed">Action Needed *</Label>
+                <Input
+                  id="edit-action-needed"
+                  value={editForm.action_needed}
+                  onChange={(e) => setEditForm((current) => ({ ...current, action_needed: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-request-details">Request / Change Details</Label>
+                <Textarea
+                  id="edit-request-details"
+                  value={editForm.request_details}
+                  onChange={(e) => setEditForm((current) => ({ ...current, request_details: e.target.value }))}
+                  rows={4}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-notes">Notes</Label>
+                <Textarea
+                  id="edit-notes"
+                  value={editForm.notes}
+                  onChange={(e) => setEditForm((current) => ({ ...current, notes: e.target.value }))}
+                  rows={4}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setEditingRequest(null)} disabled={isSavingEdit}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isSavingEdit}>
+                {isSavingEdit ? 'Saving…' : 'Save changes'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
